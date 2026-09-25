@@ -177,32 +177,97 @@ export async function optionalAuthenticate(req: AuthenticatedRequest, res: Respo
 }
 
 /**
- * Role-based access control middleware
+ * Role-based access control helpers and middleware
  */
-export function requireRole(...allowedRoles: Array<'CUSTOMER' | 'RESELLER' | 'ADMIN' | 'SUPER ADMIN'>) {
+export function isOwner(role?: string): boolean {
+  if (!role) return false;
+  const r = role.toUpperCase();
+  return r === 'OWNER' || r === 'SUPER ADMIN';
+}
+
+export function isAdmin(role?: string): boolean {
+  if (!role) return false;
+  const r = role.toUpperCase();
+  return r === 'ADMIN' || r === 'OWNER' || r === 'SUPER ADMIN';
+}
+
+export function isUser(role?: string): boolean {
+  if (!role) return false;
+  const r = role.toUpperCase();
+  return r === 'USER' || r === 'CUSTOMER' || r === 'RESELLER' || r === 'ADMIN' || r === 'OWNER' || r === 'SUPER ADMIN';
+}
+
+export function maskSecret(secret?: string): string {
+  if (!secret) return '••••••••••••';
+  if (secret.length <= 6) return '••••••';
+  return '••••••••••••' + secret.slice(-4);
+}
+
+export function requireRole(...allowedRoles: string[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
-    // Super Admin has universal access
-    if (req.user.role === 'SUPER ADMIN') {
+    const userRole = (req.user.role || '').toUpperCase();
+    const normalizedAllowed = allowedRoles.map(r => r.toUpperCase());
+
+    // Owner / Super Admin has absolute universal access
+    if (isOwner(userRole)) {
       return next();
     }
 
-    // Admin has access to ADMIN, RESELLER, CUSTOMER requirements
-    if (req.user.role === 'ADMIN' && allowedRoles.includes('ADMIN')) {
+    // Admin has access if ADMIN is in allowedRoles
+    if (isAdmin(userRole) && (normalizedAllowed.includes('ADMIN') || normalizedAllowed.includes('CUSTOMER') || normalizedAllowed.includes('USER'))) {
       return next();
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
+    // Direct match
+    if (normalizedAllowed.includes(userRole)) {
+      return next();
+    }
+
+    // USER matches CUSTOMER / RESELLER
+    if (normalizedAllowed.includes('USER') && (userRole === 'CUSTOMER' || userRole === 'RESELLER')) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      error: `Forbidden. You do not have permission for this resource. Required role: ${allowedRoles.join(' or ')}`
+    });
+  };
+}
+
+export function requirePermission(permission: string) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    // Owner has universal access
+    if (isOwner(req.user.role)) {
+      return next();
+    }
+
+    // If Admin, check assigned permissions
+    if (req.user.role.toUpperCase() === 'ADMIN') {
+      const permRecord = db.admin_permissions.find(p => p.admin_user_id === req.user!.id);
+      // Default to allowed for basic admin or check if permission is listed
+      if (!permRecord || permRecord.permissions.includes(permission) || permRecord.permissions.includes('*')) {
+        return next();
+      }
+
       return res.status(403).json({
         success: false,
-        error: `Forbidden. You do not have permission for this resource. Required: ${allowedRoles.join(' or ')}`
+        error: `Access denied. Missing required admin permission: "${permission}".`
       });
     }
 
-    next();
+    return res.status(403).json({
+      success: false,
+      error: 'Access denied. Admin or Owner privileges required.'
+    });
   };
 }
 
@@ -254,140 +319,256 @@ export function assertOwnership(user: User, resourceOwnerId: string, resourceNam
 /**
  * Seeds initial production/demo accounts if database is fresh
  */
+/**
+ * Seeds initial production/demo accounts and migrates existing users safely
+ */
 export async function seedInitialUsers() {
-  if (db.users.length === 0) {
-    console.log('Seeding initial production roles and demo users...');
-    const now = new Date();
-    const thirtyDaysAhead = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    const oneYearAhead = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
+  const thirtyDaysAhead = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    // 1. Super Admin Account
-    const adminPass = await CryptoService.hashPassword('Admin@123456');
-    const adminUser: User = {
+  // 1. Ensure Owner Account exists
+  let owner = db.users.find(u => u.email.toLowerCase() === 'owner@telesell.io' || u.role === 'OWNER' || u.role === 'SUPER ADMIN');
+  if (!owner) {
+    const ownerPass = await CryptoService.hashPassword('Owner123!');
+    owner = {
+      id: 'usr-owner-01',
+      email: 'owner@telesell.io',
+      username: 'fz_owner',
+      password_hash: ownerPass,
+      role: 'OWNER',
+      full_name: 'FZ System Owner',
+      telegram_username: 'fz_owner',
+      is_email_verified: true,
+      two_factor_enabled: false,
+      referral_code: 'FZOWNER1',
+      reseller_status: 'APPROVED',
+      reseller_commission_rate: 30,
+      reseller_balance: 50000,
+      wallet_balance: 10000,
+      total_deposited: 10000,
+      total_spent: 0,
+      created_at: now,
+      updated_at: now
+    };
+    db.users.unshift(owner);
+  } else {
+    if (!owner.username) owner.username = 'fz_owner';
+    if (owner.wallet_balance === undefined) owner.wallet_balance = 10000;
+  }
+
+  // 2. Ensure Admin Account exists
+  let admin = db.users.find(u => u.email.toLowerCase() === 'admin@telesell.io');
+  if (!admin) {
+    const adminPass = await CryptoService.hashPassword('Admin123!');
+    admin = {
       id: 'usr-admin-01',
       email: 'admin@telesell.io',
+      username: 'fz_admin',
       password_hash: adminPass,
-      role: 'SUPER ADMIN',
-      full_name: 'Platform Super Admin',
+      role: 'ADMIN',
+      full_name: 'Platform Administrator',
+      telegram_username: 'fz_admin',
       is_email_verified: true,
       two_factor_enabled: false,
       referral_code: 'ADMIN2026',
       reseller_status: 'APPROVED',
       reseller_commission_rate: 25,
       reseller_balance: 12500,
-      created_at: now.toISOString(),
-      updated_at: now.toISOString()
+      wallet_balance: 5000,
+      total_deposited: 5000,
+      total_spent: 0,
+      created_at: now,
+      updated_at: now
     };
-    db.users.push(adminUser);
+    db.users.push(admin);
+  } else {
+    if (!admin.username) admin.username = 'fz_admin';
+    if (admin.wallet_balance === undefined) admin.wallet_balance = 5000;
+  }
 
-    // 2. Demo Merchant User (Customer Role)
-    const userPass = await CryptoService.hashPassword('User@123456');
-    const merchantUser: User = {
-      id: 'usr-merchant-02',
-      email: 'merchant@telesell.io',
+  // Ensure Admin Permissions exist
+  if (!db.admin_permissions.some(p => p.admin_user_id === admin!.id)) {
+    db.admin_permissions.push({
+      id: `perm-${admin.id}`,
+      admin_user_id: admin.id,
+      permissions: [
+        'users.view',
+        'users.edit',
+        'payments.view',
+        'payments.verify',
+        'products.view',
+        'products.create',
+        'products.edit',
+        'telegram.view',
+        'telegram.connect',
+        'apk.view',
+        'apk.upload',
+        'broadcast.send',
+        'settings.view',
+        'app.update',
+        'security.logs'
+      ],
+      updated_by: owner.id,
+      created_at: now,
+      updated_at: now
+    });
+  }
+
+  // 3. Ensure User Account exists
+  let standardUser = db.users.find(u => u.email.toLowerCase() === 'user@telesell.io' || u.role === 'USER');
+  if (!standardUser) {
+    const userPass = await CryptoService.hashPassword('User123!');
+    standardUser = {
+      id: 'usr-standard-02',
+      email: 'user@telesell.io',
+      username: 'fz_user',
       password_hash: userPass,
-      role: 'CUSTOMER',
-      full_name: 'Alex Rivera (Pro Merchant)',
+      role: 'USER',
+      full_name: 'FZ Client User',
+      telegram_username: 'fz_client',
       is_email_verified: true,
       two_factor_enabled: false,
-      referral_code: 'ALEX778',
+      referral_code: 'FZUSER77',
       reseller_status: 'NONE',
       reseller_commission_rate: 15,
       reseller_balance: 0,
-      created_at: now.toISOString(),
-      updated_at: now.toISOString()
+      wallet_balance: 1500,
+      total_deposited: 1500,
+      total_spent: 350,
+      created_at: now,
+      updated_at: now
     };
-    db.users.push(merchantUser);
+    db.users.push(standardUser);
+  } else {
+    if (!standardUser.username) standardUser.username = 'fz_user';
+    if (standardUser.wallet_balance === undefined) standardUser.wallet_balance = 1500;
+  }
 
-    // 3. Demo Reseller User
-    const resellerPass = await CryptoService.hashPassword('Reseller@123456');
-    const resellerUser: User = {
-      id: 'usr-reseller-03',
-      email: 'reseller@telesell.io',
-      password_hash: resellerPass,
-      role: 'RESELLER',
-      full_name: 'SaaS Reseller Partner',
-      is_email_verified: true,
-      two_factor_enabled: false,
-      referral_code: 'PARTNER99',
-      reseller_status: 'APPROVED',
-      reseller_commission_rate: 20,
-      reseller_balance: 4800,
-      created_at: now.toISOString(),
-      updated_at: now.toISOString()
-    };
-    db.users.push(resellerUser);
+  // 4. Migrate and preserve all existing users
+  for (const u of db.users) {
+    if (!u.username) {
+      u.username = u.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_');
+    }
+    if (u.wallet_balance === undefined) {
+      u.wallet_balance = u.role === 'CUSTOMER' ? 750 : 2500;
+    }
+    if (u.total_deposited === undefined) {
+      u.total_deposited = u.wallet_balance;
+    }
+    if (u.total_spent === undefined) {
+      u.total_spent = 0;
+    }
+  }
 
-    // Give merchant an active PRO subscription
-    const proSub: Subscription = {
-      id: 'sub-merchant-pro',
-      user_id: merchantUser.id,
-      plan_id: 'plan-pro',
-      billing_cycle: 'MONTHLY',
-      amount: 1499,
-      currency: 'INR',
-      status: 'ACTIVE',
-      start_date: now.toISOString(),
-      expiry_date: thirtyDaysAhead,
-      auto_renew: true,
-      payment_id: 'pay-seed-01',
-      created_at: now.toISOString(),
-      updated_at: now.toISOString()
-    };
-    db.subscriptions.push(proSub);
+  // 5. Ensure Demo Balance Transaction exists
+  if (db.balance_transactions.length === 0) {
+    db.balance_transactions.push({
+      id: 'tx-seed-01',
+      user_id: standardUser.id,
+      user_email: standardUser.email,
+      type: 'CREDIT',
+      amount: 1500,
+      previous_balance: 0,
+      new_balance: 1500,
+      reason: 'Initial Wallet Welcome Deposit (UPI)',
+      payment_id: 'pay-seed-upi-01',
+      created_at: now
+    });
+  }
 
-    // Seed a Connected Telegram Bot for the merchant
+  // 6. Ensure default App Config and Releases exist
+  if (!db.app_configs || db.app_configs.length === 0) {
+    db.app_configs = [
+      {
+        id: 'app-cfg-primary',
+        owner_id: owner.id,
+        app_name: 'FZ SHOT ENGINE',
+        package_name: 'com.fz.shotengine',
+        logo_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=250&q=80',
+        support_url: 'https://t.me/fz_support',
+        telegram_channel: 'https://t.me/fz_official',
+        support_username: 'fz_support',
+        payment_upi: 'merchant@upi',
+        maintenance_mode: false,
+        announcement: 'Welcome to FZ Shot Engine v2.0! Instant digital licenses now live.',
+        minimum_version_code: 18,
+        latest_version_code: 20,
+        latest_version_name: '2.0.0',
+        download_url: '/api/apk/apk-fz-engine-v2/download',
+        force_update: false,
+        feature_flags: {
+          enable_instant_checkout: true,
+          enable_telegram_sync: true,
+          enable_sandbox_mode: true,
+          enable_biometric_login: true
+        },
+        github_repo: 'FZ-Panel/android-engine',
+        github_branch: 'main',
+        github_workflow: 'build-release-apk.yml',
+        ci_build_status: 'SUCCESS',
+        last_build_at: now,
+        updated_at: now
+      }
+    ];
+  }
+
+  // 7. Seed demo bot, products, and categories if bots table is empty
+  if (db.telegram_bots.length === 0) {
     const botId = 'bot-seed-01';
     const fakeBotToken = '7123456789:AAEjSampleProductionKeyEncrypted001';
+    const demoOwnerId = standardUser.id;
+    const merchantUser = standardUser;
+    const adminUser = admin;
+
     db.telegram_bots.push({
       id: botId,
-      owner_id: merchantUser.id,
+      owner_id: demoOwnerId,
       bot_token_encrypted: CryptoService.encrypt(fakeBotToken),
       bot_id: '7123456789',
-      username: 'AlexDigitalStoreBot',
-      first_name: 'Alex Digital Store',
+      username: 'FZShotEngineBot',
+      first_name: 'FZ Shot Engine Store',
       can_join_groups: true,
       can_read_all_group_messages: false,
       supports_inline_queries: true,
       is_active: true,
       status: 'CONNECTED',
-      created_at: now.toISOString(),
-      updated_at: now.toISOString()
+      created_at: now,
+      updated_at: now
     });
 
     db.bot_settings.push({
       id: 'set-bot-01',
       bot_id: botId,
-      owner_id: merchantUser.id,
-      display_name: '⚡ Alex Digital Assets Store',
-      description: 'Instant automated delivery for software licenses, digital templates, and premium courses.',
-      support_username: 'alex_support',
+      owner_id: demoOwnerId,
+      display_name: '⚡ FZ Shot Engine Store',
+      description: 'Instant automated delivery for software licenses, digital templates, and premium tools.',
+      support_username: 'fz_support',
       currency: 'INR',
       timezone: 'Asia/Kolkata',
-      start_text: '👋 *Welcome to Alex Digital Store!*\n\nSelect a category or browse all digital items below with instant automated Telegram delivery.',
+      start_text: '👋 *Welcome to FZ Shot Engine Store!*\n\nSelect a category or browse all digital items below with instant automated Telegram delivery.',
       start_banner_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80',
       promo_message: '🔥 Use code *TELESELL10* to get 10% OFF your purchase!',
       auto_delivery: true,
       notify_admin_on_order: true,
-      created_at: now.toISOString(),
-      updated_at: now.toISOString()
+      created_at: now,
+      updated_at: now
     });
 
     // Seed Buttons for Bot
     db.bot_buttons.push(
-      { id: 'btn-1', bot_id: botId, owner_id: merchantUser.id, label: '🛍️ Browse Products', button_type: 'CALLBACK', target_value: 'VIEW_PRODUCTS', row_order: 0, col_order: 0, created_at: now.toISOString() },
-      { id: 'btn-2', bot_id: botId, owner_id: merchantUser.id, label: '📂 Categories', button_type: 'CATEGORY', target_value: 'ALL_CATEGORIES', row_order: 0, col_order: 1, created_at: now.toISOString() },
-      { id: 'btn-3', bot_id: botId, owner_id: merchantUser.id, label: '🎁 Promo Coupons', button_type: 'CALLBACK', target_value: 'VIEW_COUPONS', row_order: 1, col_order: 0, created_at: now.toISOString() },
-      { id: 'btn-4', bot_id: botId, owner_id: merchantUser.id, label: '💳 My Balance / Wallet', button_type: 'BALANCE', target_value: 'MY_BALANCE', row_order: 1, col_order: 1, created_at: now.toISOString() },
-      { id: 'btn-5', bot_id: botId, owner_id: merchantUser.id, label: '💬 Live Support', button_type: 'SUPPORT', target_value: 'alex_support', row_order: 2, col_order: 0, created_at: now.toISOString() }
+      { id: 'btn-1', bot_id: botId, owner_id: merchantUser.id, label: '🛍️ Browse Products', button_type: 'CALLBACK', target_value: 'VIEW_PRODUCTS', row_order: 0, col_order: 0, created_at: now },
+      { id: 'btn-2', bot_id: botId, owner_id: merchantUser.id, label: '📂 Categories', button_type: 'CATEGORY', target_value: 'ALL_CATEGORIES', row_order: 0, col_order: 1, created_at: now },
+      { id: 'btn-3', bot_id: botId, owner_id: merchantUser.id, label: '🎁 Promo Coupons', button_type: 'CALLBACK', target_value: 'VIEW_COUPONS', row_order: 1, col_order: 0, created_at: now },
+      { id: 'btn-4', bot_id: botId, owner_id: merchantUser.id, label: '💳 My Balance / Wallet', button_type: 'BALANCE', target_value: 'MY_BALANCE', row_order: 1, col_order: 1, created_at: now },
+      { id: 'btn-5', bot_id: botId, owner_id: merchantUser.id, label: '💬 Live Support', button_type: 'SUPPORT', target_value: 'alex_support', row_order: 2, col_order: 0, created_at: now }
     );
 
     // Seed Categories
     const catSoftware = 'cat-soft-01';
     const catCourses = 'cat-course-02';
     db.product_categories.push(
-      { id: catSoftware, owner_id: merchantUser.id, bot_id: botId, name: 'Software Licenses', description: 'Genuine developer & productivity serial keys', is_active: true, created_at: now.toISOString() },
-      { id: catCourses, owner_id: merchantUser.id, bot_id: botId, name: 'Premium eBooks & Files', description: 'Direct downloadable guides and assets', is_active: true, created_at: now.toISOString() }
+      { id: catSoftware, owner_id: merchantUser.id, bot_id: botId, name: 'Software Licenses', description: 'Genuine developer & productivity serial keys', is_active: true, created_at: now },
+      { id: catCourses, owner_id: merchantUser.id, bot_id: botId, name: 'Premium eBooks & Files', description: 'Direct downloadable guides and assets', is_active: true, created_at: now }
     );
 
     // Seed Products
@@ -409,8 +590,8 @@ export async function seedInitialUsers() {
         delivery_type: 'LICENSE_KEY',
         is_active: true,
         stock_count: 5,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString()
+        created_at: now,
+        updated_at: now
       },
       {
         id: prodFile,
@@ -426,8 +607,8 @@ export async function seedInitialUsers() {
         custom_message: 'Thank you for purchasing! Your download link is ready.',
         is_active: true,
         stock_count: 999,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString()
+        created_at: now,
+        updated_at: now
       },
       {
         id: prodCourse,
@@ -443,18 +624,18 @@ export async function seedInitialUsers() {
         custom_message: 'Access your private Notion portal here: https://notion.so/telegram-growth-vault-invite',
         is_active: true,
         stock_count: 999,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString()
+        created_at: now,
+        updated_at: now
       }
     );
 
     // Seed License Keys
     db.license_keys.push(
-      { id: 'key-1', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-ABCD-9982-XQ71-MK01', is_redeemed: false, created_at: now.toISOString() },
-      { id: 'key-2', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-EFGH-4412-PQ99-ZZ02', is_redeemed: false, created_at: now.toISOString() },
-      { id: 'key-3', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-JKLM-7731-TT22-AB03', is_redeemed: false, created_at: now.toISOString() },
-      { id: 'key-4', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-NPQR-1109-YY88-CD04', is_redeemed: false, created_at: now.toISOString() },
-      { id: 'key-5', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-STUV-5567-EE44-EF05', is_redeemed: false, created_at: now.toISOString() }
+      { id: 'key-1', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-ABCD-9982-XQ71-MK01', is_redeemed: false, created_at: now },
+      { id: 'key-2', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-EFGH-4412-PQ99-ZZ02', is_redeemed: false, created_at: now },
+      { id: 'key-3', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-JKLM-7731-TT22-AB03', is_redeemed: false, created_at: now },
+      { id: 'key-4', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-NPQR-1109-YY88-CD04', is_redeemed: false, created_at: now },
+      { id: 'key-5', owner_id: merchantUser.id, product_id: prodLicense, license_key: 'W11P-STUV-5567-EE44-EF05', is_redeemed: false, created_at: now }
     );
 
     // Seed Digital File record
@@ -467,15 +648,15 @@ export async function seedInitialUsers() {
       file_size: 45200000,
       mime_type: 'application/zip',
       download_token: CryptoService.generateRandomToken(16),
-      created_at: now.toISOString()
+      created_at: now
     });
 
     // Seed Customers
     const cust1 = 'cust-tg-98711';
     const cust2 = 'cust-tg-55421';
     db.customers.push(
-      { id: cust1, owner_id: merchantUser.id, bot_id: botId, telegram_id: '98711234', username: 'dev_rahul', first_name: 'Rahul Sharma', total_purchases: 2, total_spent: 2098, wallet_balance: 150, last_purchase_at: now.toISOString(), created_at: now.toISOString(), updated_at: now.toISOString() },
-      { id: cust2, owner_id: merchantUser.id, bot_id: botId, telegram_id: '55421980', username: 'priya_codes', first_name: 'Priya Verma', total_purchases: 1, total_spent: 799, wallet_balance: 0, last_purchase_at: now.toISOString(), created_at: now.toISOString(), updated_at: now.toISOString() }
+      { id: cust1, owner_id: merchantUser.id, bot_id: botId, telegram_id: '98711234', username: 'dev_rahul', first_name: 'Rahul Sharma', total_purchases: 2, total_spent: 2098, wallet_balance: 150, last_purchase_at: now, created_at: now, updated_at: now },
+      { id: cust2, owner_id: merchantUser.id, bot_id: botId, telegram_id: '55421980', username: 'priya_codes', first_name: 'Priya Verma', total_purchases: 1, total_spent: 799, wallet_balance: 0, last_purchase_at: now, created_at: now, updated_at: now }
     );
 
     // Seed Real Orders
@@ -537,7 +718,7 @@ export async function seedInitialUsers() {
       current_uses: 2,
       min_order_amount: 400,
       is_active: true,
-      created_at: now.toISOString()
+      created_at: now
     });
 
     // Seed Audit Log

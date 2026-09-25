@@ -4,10 +4,16 @@ import path from 'path';
 export interface User {
   id: string;
   email: string;
+  username?: string;
   password_hash: string;
-  role: 'CUSTOMER' | 'RESELLER' | 'ADMIN' | 'SUPER ADMIN';
+  role: 'USER' | 'CUSTOMER' | 'RESELLER' | 'ADMIN' | 'OWNER' | 'SUPER ADMIN' | string;
   full_name: string;
+  telegram_username?: string;
+  telegram_id?: string;
   is_email_verified: boolean;
+  email_verification_token?: string;
+  password_reset_token?: string;
+  password_reset_expires?: string;
   two_factor_enabled: boolean;
   two_factor_secret?: string;
   referral_code: string;
@@ -15,7 +21,100 @@ export interface User {
   reseller_status: 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
   reseller_commission_rate: number; // percentage (e.g. 15%)
   reseller_balance: number;
+  wallet_balance?: number; // User wallet balance
+  total_deposited?: number;
+  total_spent?: number;
+  last_login_at?: string;
+  last_login_ip?: string;
+  failed_login_attempts?: number;
+  lockout_until?: string;
   created_at: string;
+  updated_at: string;
+}
+
+export interface AdminPermission {
+  id: string;
+  admin_user_id: string;
+  permissions: string[]; // e.g. ['users.view', 'users.edit', 'payments.verify', 'apk.upload', 'app.update', ...]
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BalanceTransaction {
+  id: string;
+  user_id: string;
+  user_email?: string;
+  type: 'CREDIT' | 'DEBIT' | 'REFUND' | 'ADJUSTMENT';
+  amount: number;
+  previous_balance: number;
+  new_balance: number;
+  reason: string;
+  order_id?: string;
+  payment_id?: string;
+  actor_id?: string;
+  created_at: string;
+}
+
+export interface ApkFile {
+  id: string;
+  owner_id: string;
+  app_name: string;
+  version: string;
+  version_code: number;
+  file_name: string;
+  stored_file_path: string;
+  download_url: string;
+  file_size: number;
+  file_hash?: string;
+  release_notes: string;
+  is_active: boolean;
+  download_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppRelease {
+  id: string;
+  owner_id: string;
+  app_name: string;
+  version_name: string;
+  version_code: number;
+  apk_file_id?: string;
+  apk_url: string;
+  release_notes: string;
+  minimum_version_code: number;
+  force_update: boolean;
+  release_date: string;
+  status: 'DRAFT' | 'TESTING' | 'PUBLISHED' | 'ARCHIVED';
+  download_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppConfig {
+  id: string;
+  owner_id: string;
+  app_name: string;
+  package_name?: string;
+  logo_url?: string;
+  support_url: string;
+  telegram_channel?: string;
+  support_username: string;
+  payment_upi?: string;
+  maintenance_mode: boolean;
+  announcement?: string;
+  minimum_version_code: number;
+  latest_version_code: number;
+  latest_version_name: string;
+  download_url: string;
+  force_update: boolean;
+  feature_flags: Record<string, boolean>;
+  github_repo?: string;
+  github_branch?: string;
+  github_workflow?: string;
+  ci_build_status?: 'IDLE' | 'BUILDING' | 'SUCCESS' | 'FAILED';
+  last_build_at?: string;
   updated_at: string;
 }
 
@@ -549,6 +648,11 @@ export interface DatabaseSchema {
   notifications: Notification[];
   audit_logs: AuditLog[];
   system_settings: SystemSettings[];
+  admin_permissions: AdminPermission[];
+  balance_transactions: BalanceTransaction[];
+  apk_files: ApkFile[];
+  app_releases: AppRelease[];
+  app_configs: AppConfig[];
 }
 
 export class Database {
@@ -702,6 +806,94 @@ export class Database {
         { id: 'set-4', key: 'RESELLER_BASE_COMMISSION', value: '15', description: 'Default reseller commission percentage', updated_at: now },
         { id: 'set-5', key: 'REFERRAL_REWARD_PERCENT', value: '10', description: 'Referral reward percentage on subscription', updated_at: now },
         { id: 'set-6', key: 'TELEGRAM_RATE_LIMIT_MS', value: '35', description: 'Delay between broadcast messages in milliseconds', updated_at: now }
+      ],
+      admin_permissions: [],
+      balance_transactions: [],
+      apk_files: [
+        {
+          id: 'apk-fz-engine-v2',
+          owner_id: 'usr-admin-01',
+          app_name: 'FZ SHOT ENGINE',
+          version: '2.0.0',
+          version_code: 20,
+          file_name: 'FZ_Shot_Engine_v2.0.0.apk',
+          stored_file_path: 'data/uploads/FZ_Shot_Engine_v2.0.0.apk',
+          download_url: '/api/apk/apk-fz-engine-v2/download',
+          file_size: 28456120, // ~28.4 MB
+          release_notes: '• Complete new UI overhaul\n• Ultra fast response pipeline\n• Instant UPI payment system\n• Major stability & security enhancements',
+          is_active: true,
+          download_count: 1420,
+          created_at: now,
+          updated_at: now
+        }
+      ],
+      app_releases: [
+        {
+          id: 'rel-200',
+          owner_id: 'usr-admin-01',
+          app_name: 'FZ SHOT ENGINE',
+          version_name: '2.0.0',
+          version_code: 20,
+          apk_file_id: 'apk-fz-engine-v2',
+          apk_url: '/api/apk/apk-fz-engine-v2/download',
+          release_notes: '• Complete new UI overhaul\n• Ultra fast response pipeline\n• Instant UPI payment system\n• Major stability & security enhancements',
+          minimum_version_code: 18,
+          force_update: false,
+          release_date: now,
+          status: 'PUBLISHED',
+          download_count: 1420,
+          created_at: now,
+          updated_at: now
+        },
+        {
+          id: 'rel-190',
+          owner_id: 'usr-admin-01',
+          app_name: 'FZ SHOT ENGINE',
+          version_name: '1.9.0',
+          version_code: 19,
+          apk_file_id: 'apk-fz-engine-v2',
+          apk_url: '/api/apk/apk-fz-engine-v2/download',
+          release_notes: '• Previous stable release with high compatibility',
+          minimum_version_code: 15,
+          force_update: false,
+          release_date: new Date(Date.now() - 15 * 86400000).toISOString(),
+          status: 'ARCHIVED',
+          download_count: 4210,
+          created_at: new Date(Date.now() - 15 * 86400000).toISOString(),
+          updated_at: new Date(Date.now() - 15 * 86400000).toISOString()
+        }
+      ],
+      app_configs: [
+        {
+          id: 'app-cfg-primary',
+          owner_id: 'usr-admin-01',
+          app_name: 'FZ SHOT ENGINE',
+          package_name: 'com.fz.shotengine',
+          logo_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=250&q=80',
+          support_url: 'https://t.me/fz_support',
+          telegram_channel: 'https://t.me/fz_official',
+          support_username: 'fz_support',
+          payment_upi: 'merchant@upi',
+          maintenance_mode: false,
+          announcement: 'Welcome to FZ Shot Engine v2.0! Instant digital licenses now live.',
+          minimum_version_code: 18,
+          latest_version_code: 20,
+          latest_version_name: '2.0.0',
+          download_url: '/api/apk/apk-fz-engine-v2/download',
+          force_update: false,
+          feature_flags: {
+            enable_instant_checkout: true,
+            enable_telegram_sync: true,
+            enable_sandbox_mode: true,
+            enable_biometric_login: true
+          },
+          github_repo: 'FZ-Panel/android-engine',
+          github_branch: 'main',
+          github_workflow: 'build-release-apk.yml',
+          ci_build_status: 'SUCCESS',
+          last_build_at: now,
+          updated_at: now
+        }
       ]
     };
   }
@@ -794,6 +986,16 @@ export class Database {
   public set audit_logs(val: AuditLog[]) { this.data.audit_logs = val; }
   public get system_settings(): SystemSettings[] { return this.data.system_settings; }
   public set system_settings(val: SystemSettings[]) { this.data.system_settings = val; }
+  public get admin_permissions(): AdminPermission[] { return this.data.admin_permissions || []; }
+  public set admin_permissions(val: AdminPermission[]) { this.data.admin_permissions = val; }
+  public get balance_transactions(): BalanceTransaction[] { return this.data.balance_transactions || []; }
+  public set balance_transactions(val: BalanceTransaction[]) { this.data.balance_transactions = val; }
+  public get apk_files(): ApkFile[] { return this.data.apk_files || []; }
+  public set apk_files(val: ApkFile[]) { this.data.apk_files = val; }
+  public get app_releases(): AppRelease[] { return this.data.app_releases || []; }
+  public set app_releases(val: AppRelease[]) { this.data.app_releases = val; }
+  public get app_configs(): AppConfig[] { return this.data.app_configs || []; }
+  public set app_configs(val: AppConfig[]) { this.data.app_configs = val; }
 }
 
 export const db = new Database();
