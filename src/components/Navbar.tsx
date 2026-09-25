@@ -12,11 +12,11 @@ import {
   Sparkles,
   Zap,
   RefreshCw,
-  Server,
-  Download
+  Server
 } from 'lucide-react';
 import { User, Subscription, TelegramBot, Notification } from '../types';
 import { api } from '../api';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   user: User;
@@ -86,8 +86,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Bot className="w-5 h-5 text-white" />
           </div>
           <div className="hidden sm:block">
-            <span className="text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
-              TeleSell <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-semibold uppercase tracking-wider">SaaS</span>
+            <span className="text-lg font-black tracking-tight text-white flex items-center gap-1.5">
+              FZ PANEL <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-extrabold uppercase tracking-wider">ENGINE</span>
             </span>
           </div>
         </div>
@@ -122,16 +122,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Right Action Bar */}
       <div className="flex items-center space-x-2 md:space-x-4">
-        {/* Download Full Project ZIP */}
-        <a
-          href="/api/download-project"
-          download="telesell-full-source.zip"
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-semibold transition-all hover:shadow-lg hover:shadow-cyan-500/10"
-          title="Download complete source code (.zip) for GitHub and Android build"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Export Code (.ZIP)</span>
-        </a>
+        {/* Native PWA Install Button */}
+        <PWAInstallButton />
 
         {/* 24/7 Hosting Monitor */}
         <button

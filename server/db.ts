@@ -128,6 +128,21 @@ export interface Session {
   created_at: string;
 }
 
+export interface OtpRecord {
+  id: string;
+  identifier: string; // email or phone
+  code_hash: string;
+  purpose: 'REGISTER' | 'LOGIN' | 'RESET_PASSWORD';
+  channel: 'EMAIL' | 'SMS';
+  attempts: number;
+  max_attempts: number;
+  expires_at: string;
+  resend_after: string;
+  verified: boolean;
+  ip_address: string;
+  created_at: string;
+}
+
 export interface SubscriptionPlan {
   id: string;
   name: string;
@@ -383,7 +398,7 @@ export interface MediaItem {
   id: string;
   owner_id: string;
   bot_id?: string;
-  media_type: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  media_type: 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT';
   original_name: string;
   stored_name: string;
   url: string;
@@ -653,6 +668,7 @@ export interface DatabaseSchema {
   apk_files: ApkFile[];
   app_releases: AppRelease[];
   app_configs: AppConfig[];
+  otp_records: OtpRecord[];
 }
 
 export class Database {
@@ -894,7 +910,8 @@ export class Database {
           last_build_at: now,
           updated_at: now
         }
-      ]
+      ],
+      otp_records: []
     };
   }
 
@@ -996,6 +1013,8 @@ export class Database {
   public set app_releases(val: AppRelease[]) { this.data.app_releases = val; }
   public get app_configs(): AppConfig[] { return this.data.app_configs || []; }
   public set app_configs(val: AppConfig[]) { this.data.app_configs = val; }
+  public get otp_records(): OtpRecord[] { return this.data.otp_records || []; }
+  public set otp_records(val: OtpRecord[]) { this.data.otp_records = val; }
 }
 
 export const db = new Database();

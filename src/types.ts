@@ -1,12 +1,14 @@
 export interface User {
   id: string;
   email: string;
+  username?: string;
   full_name: string;
-  role: 'CUSTOMER' | 'RESELLER' | 'ADMIN' | 'SUPER ADMIN';
+  role: 'USER' | 'CUSTOMER' | 'RESELLER' | 'ADMIN' | 'OWNER' | 'SUPER ADMIN' | string;
   referral_code: string;
   reseller_status: 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
   reseller_commission_rate: number;
   reseller_balance: number;
+  wallet_balance?: number;
   two_factor_enabled?: boolean;
   created_at?: string;
 }
@@ -223,7 +225,7 @@ export interface MediaItem {
   id: string;
   owner_id?: string;
   bot_id?: string;
-  media_type: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  media_type: 'IMAGE' | 'VIDEO' | 'AUDIO' | 'DOCUMENT';
   original_name: string;
   stored_name: string;
   url: string;

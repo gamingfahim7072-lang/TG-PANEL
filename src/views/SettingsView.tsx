@@ -174,6 +174,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user }) => {
         </div>
       </div>
 
+      {/* Platform Experience & PWA */}
+      <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+              <Shield className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white">Platform Experience & Native PWA</h2>
+              <p className="text-xs text-slate-400">Cinematic intro playback, offline mode, and home screen installation</p>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-bold border border-cyan-500/20">
+            FZ ENGINE v2.0
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          <button
+            onClick={() => {
+              sessionStorage.removeItem('fz_intro_seen');
+              window.location.reload();
+            }}
+            className="flex items-center justify-center space-x-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-xs font-bold text-slate-200 hover:text-cyan-400 transition-all cursor-pointer"
+          >
+            <span>▶ Replay Cinematic Intro</span>
+          </button>
+
+          <button
+            onClick={() => {
+              const standalone = window.matchMedia('(display-mode: standalone)').matches;
+              if (standalone) {
+                alert('FZ Panel is already running as an installed standalone PWA.');
+              } else {
+                alert('To install on Desktop / Mobile: Open your browser menu (⋮) and tap "Install app" or "Add to Home screen".');
+              }
+            }}
+            className="flex items-center justify-center space-x-2 px-4 py-2.5 bg-gradient-to-r from-cyan-500/20 to-blue-600/20 hover:from-cyan-500/30 hover:to-blue-600/30 border border-cyan-500/40 rounded-xl text-xs font-bold text-cyan-400 transition-all cursor-pointer"
+          >
+            <span>📱 Install Native PWA / APK Experience</span>
+          </button>
+        </div>
+      </div>
+
       {/* Developer Webhooks Documentation & Guide */}
       <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6 space-y-3">
         <div className="flex items-center space-x-2.5">

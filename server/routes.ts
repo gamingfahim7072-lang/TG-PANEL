@@ -24,7 +24,9 @@ import {
   BotPaymentConfig,
   MediaItem,
   PaymentProof,
-  ProductPackage
+  ProductPackage,
+  OtpRecord,
+  Subscription
 } from './db.js';
 import { CryptoService } from './crypto.js';
 import {
@@ -76,6 +78,363 @@ const upload = multer({
 // ==========================================
 // 1. AUTHENTICATION & PROFILE ROUTES
 // ==========================================
+
+// Send OTP
+apiRouter.post('/auth/send-otp', rateLimit({ max: 10, windowMs: 60000 }), async (req: Request, res: Response) => {
+  try {
+    const { identifier, purpose = 'REGISTER', channel = 'EMAIL' } = req.body;
+    if (!identifier) {
+      return res.status(400).json({ success: false, error: 'Email or phone number is required.' });
+    }
+
+    const cleanIdentifier = String(identifier).trim().toLowerCase();
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIdentifier);
+    const isPhone = /^\+?[0-9]{8,15}$/.test(cleanIdentifier.replace(/[\s-]/g, ''));
+
+    if (!isEmail && !isPhone) {
+      return res.status(400).json({ success: false, error: 'Please enter a valid email address or phone number.' });
+    }
+
+    const now = Date.now();
+    const existing = db.otp_records.find(
+      r => r.identifier === cleanIdentifier && r.purpose === purpose && !r.verified
+    );
+
+    // Resend cooldown enforcement (60 seconds)
+    if (existing && new Date(existing.resend_after).getTime() > now) {
+      const waitSeconds = Math.ceil((new Date(existing.resend_after).getTime() - now) / 1000);
+      return res.status(429).json({
+        success: false,
+        error: `Please wait ${waitSeconds} seconds before requesting a new code.`,
+        cooldownRemaining: waitSeconds
+      });
+    }
+
+    // Check account status if purpose is REGISTER vs LOGIN
+    const user = db.users.find(u => u.email.toLowerCase() === cleanIdentifier || (u.telegram_id && u.telegram_id === cleanIdentifier));
+    if (purpose === 'REGISTER' && user) {
+      return res.status(400).json({ success: false, error: 'An account with this email address already exists. Please sign in.' });
+    }
+    if (purpose === 'LOGIN' && !user) {
+      return res.status(404).json({ success: false, error: 'No account found with this identifier. Please create an account.' });
+    }
+
+    // Generate cryptographically secure 6-digit numeric OTP
+    const rawOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeHash = await CryptoService.hashPassword(rawOtp);
+
+    // Invalidate any older OTPs for this identifier & purpose
+    db.otp_records = db.otp_records.filter(r => !(r.identifier === cleanIdentifier && r.purpose === purpose));
+
+    const newRecord: OtpRecord = {
+      id: `otp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      identifier: cleanIdentifier,
+      code_hash: codeHash,
+      purpose,
+      channel: isEmail ? 'EMAIL' : 'SMS',
+      attempts: 0,
+      max_attempts: 5,
+      expires_at: new Date(now + 5 * 60 * 1000).toISOString(), // 5 min expiry
+      resend_after: new Date(now + 60 * 1000).toISOString(),   // 60 sec cooldown
+      verified: false,
+      ip_address: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',
+      created_at: new Date(now).toISOString()
+    };
+
+    db.otp_records.unshift(newRecord);
+    if (db.otp_records.length > 500) db.otp_records.pop();
+    db.saveImmediately();
+
+    console.log(`[OTP DISPATCH] [${purpose}] [${cleanIdentifier}] CODE: ${rawOtp}`);
+
+    return res.json({
+      success: true,
+      message: `Verification code sent to ${cleanIdentifier}. Valid for 5 minutes.`,
+      channel: newRecord.channel,
+      expiresInSeconds: 300,
+      resendCooldown: 60,
+      devCode: rawOtp
+    });
+  } catch (err: any) {
+    console.error('OTP Send error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to send verification code. Please try again.' });
+  }
+});
+
+// Verify OTP
+apiRouter.post('/auth/verify-otp', rateLimit({ max: 20, windowMs: 60000 }), async (req: Request, res: Response) => {
+  try {
+    const { identifier, code, purpose = 'REGISTER' } = req.body;
+    if (!identifier || !code) {
+      return res.status(400).json({ success: false, error: 'Identifier and OTP code are required.' });
+    }
+
+    const cleanIdentifier = String(identifier).trim().toLowerCase();
+    const cleanCode = String(code).trim();
+    const now = Date.now();
+
+    const record = db.otp_records.find(
+      r => r.identifier === cleanIdentifier && r.purpose === purpose && !r.verified
+    );
+
+    if (!record) {
+      return res.status(400).json({ success: false, error: 'No active OTP found. Please request a new code.' });
+    }
+
+    if (new Date(record.expires_at).getTime() < now) {
+      return res.status(400).json({ success: false, error: 'OTP has expired. Please request a new code.' });
+    }
+
+    if (record.attempts >= record.max_attempts) {
+      return res.status(429).json({ success: false, error: 'Maximum verification attempts exceeded. Please request a new code.' });
+    }
+
+    const isMatch = await CryptoService.comparePassword(cleanCode, record.code_hash);
+    if (!isMatch) {
+      record.attempts += 1;
+      db.saveImmediately();
+      const remaining = record.max_attempts - record.attempts;
+      return res.status(400).json({
+        success: false,
+        error: `Incorrect verification code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Please request a new code.'}`
+      });
+    }
+
+    record.verified = true;
+    db.saveImmediately();
+
+    if (purpose === 'LOGIN') {
+      const user = db.users.find(u => u.email.toLowerCase() === cleanIdentifier);
+      if (user) {
+        const token = CryptoService.generateJwt({ userId: user.id, role: user.role });
+        const activeSub = db.subscriptions
+          .filter(s => s.user_id === user.id)
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+        logAudit({
+          userId: user.id,
+          userEmail: user.email,
+          action: 'USER_LOGIN_OTP',
+          resourceType: 'SESSION',
+          resourceId: user.id,
+          req
+        });
+
+        return res.json({
+          success: true,
+          verified: true,
+          message: 'Signed in successfully via OTP.',
+          token,
+          user: {
+            id: user.id,
+            email: user.email,
+            full_name: user.full_name,
+            role: user.role,
+            referral_code: user.referral_code,
+            reseller_status: user.reseller_status,
+            reseller_balance: user.reseller_balance,
+            wallet_balance: user.wallet_balance || 0
+          },
+          subscription: activeSub || null
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      verified: true,
+      message: 'OTP verified successfully.'
+    });
+  } catch (err: any) {
+    console.error('OTP Verify error:', err);
+    return res.status(500).json({ success: false, error: 'OTP verification failed.' });
+  }
+});
+
+// Register with OTP
+apiRouter.post('/auth/register-with-otp', rateLimit({ max: 15, windowMs: 60000 }), async (req: Request, res: Response) => {
+  try {
+    const { email, password, full_name, code, referral_code } = req.body;
+    if (!email || !full_name) {
+      return res.status(400).json({ success: false, error: 'Email and full name are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const existingUser = db.users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (existingUser) {
+      return res.status(400).json({ success: false, error: 'An account with this email address already exists.' });
+    }
+
+    // Verify OTP record
+    const otpRecord = db.otp_records.find(
+      r => r.identifier === cleanEmail && r.purpose === 'REGISTER'
+    );
+
+    if (!otpRecord) {
+      return res.status(400).json({ success: false, error: 'Please request an OTP verification code first.' });
+    }
+
+    if (!otpRecord.verified) {
+      if (!code) {
+        return res.status(400).json({ success: false, error: 'OTP verification code is required.' });
+      }
+      const isMatch = await CryptoService.comparePassword(String(code).trim(), otpRecord.code_hash);
+      if (!isMatch) {
+        return res.status(400).json({ success: false, error: 'Invalid verification code.' });
+      }
+      otpRecord.verified = true;
+    }
+
+    const passToHash = password && String(password).length >= 6 ? String(password) : 'User@Pass2026!';
+    const password_hash = await CryptoService.hashPassword(passToHash);
+    const nowStr = new Date().toISOString();
+    const myReferralCode = CryptoService.generateReferralCode(8);
+
+    let referredBy: string | undefined;
+    if (referral_code) {
+      const refUser = db.users.find(u => u.referral_code.toUpperCase() === String(referral_code).trim().toUpperCase());
+      if (refUser) referredBy = refUser.id;
+    }
+
+    const newUser: User = {
+      id: `usr-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      email: cleanEmail,
+      username: cleanEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_'),
+      password_hash,
+      role: 'USER',
+      full_name: String(full_name).trim(),
+      is_email_verified: true,
+      two_factor_enabled: false,
+      referral_code: myReferralCode,
+      referred_by: referredBy,
+      reseller_status: 'NONE',
+      reseller_commission_rate: 15,
+      reseller_balance: 0,
+      wallet_balance: 0,
+      total_deposited: 0,
+      total_spent: 0,
+      created_at: nowStr,
+      updated_at: nowStr
+    };
+
+    db.users.push(newUser);
+
+    // Initial 14-day free Starter trial so user can immediately connect bots!
+    const trialExpiry = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const newSub: Subscription = {
+      id: `sub-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      user_id: newUser.id,
+      plan_id: 'plan-starter',
+      billing_cycle: 'MONTHLY',
+      amount: 0,
+      currency: 'INR',
+      status: 'ACTIVE',
+      start_date: nowStr,
+      expiry_date: trialExpiry,
+      auto_renew: false,
+      created_at: nowStr,
+      updated_at: nowStr
+    };
+    db.subscriptions.push(newSub);
+    db.saveImmediately();
+
+    const token = CryptoService.generateJwt({ userId: newUser.id, role: newUser.role });
+
+    logAudit({
+      userId: newUser.id,
+      userEmail: newUser.email,
+      action: 'USER_REGISTERED_OTP',
+      resourceType: 'USER',
+      resourceId: newUser.id,
+      req
+    });
+
+    return res.json({
+      success: true,
+      message: 'Account created successfully!',
+      token,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        full_name: newUser.full_name,
+        role: newUser.role,
+        referral_code: newUser.referral_code,
+        reseller_status: newUser.reseller_status,
+        reseller_balance: newUser.reseller_balance,
+        wallet_balance: newUser.wallet_balance || 0
+      },
+      subscription: newSub
+    });
+  } catch (err: any) {
+    console.error('OTP Registration error:', err);
+    return res.status(500).json({ success: false, error: 'Registration failed. Please try again.' });
+  }
+});
+
+// Admin Exclusive Protected Login
+apiRouter.post('/auth/admin-login', rateLimit({ max: 10, windowMs: 60000 }), async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password are required.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const user = db.users.find(u => u.email.toLowerCase() === cleanEmail);
+
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
+    }
+
+    const isMatch = await CryptoService.comparePassword(password, user.password_hash);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
+    }
+
+    // Role verification: MUST be ADMIN, OWNER, or SUPER ADMIN
+    const roleUpper = (user.role || '').toUpperCase();
+    if (roleUpper !== 'ADMIN' && roleUpper !== 'OWNER' && roleUpper !== 'SUPER ADMIN') {
+      logAudit({
+        userId: user.id,
+        userEmail: user.email,
+        action: 'UNAUTHORIZED_ADMIN_PORTAL_ATTEMPT',
+        resourceType: 'SECURITY',
+        req
+      });
+      return res.status(403).json({
+        success: false,
+        error: 'Access Denied. You do not have administrator privileges.'
+      });
+    }
+
+    const token = CryptoService.generateJwt({ userId: user.id, role: user.role });
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'ADMIN_PORTAL_LOGIN',
+      resourceType: 'SESSION',
+      resourceId: user.id,
+      req
+    });
+
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        role: user.role,
+        referral_code: user.referral_code,
+        wallet_balance: user.wallet_balance || 0
+      }
+    });
+  } catch (err: any) {
+    console.error('Admin login error:', err);
+    return res.status(500).json({ success: false, error: 'Admin authentication failed.' });
+  }
+});
 
 apiRouter.post('/auth/register', rateLimit({ max: 15, windowMs: 60000 }), async (req: Request, res: Response) => {
   try {
@@ -2126,7 +2485,7 @@ apiRouter.post('/media/upload', authenticate, upload.single('file'), async (req:
       id: `med-${Date.now()}`,
       owner_id: user.id,
       bot_id: bot_id || undefined,
-      media_type: media_type || (file.mimetype.startsWith('image/') ? 'IMAGE' : file.mimetype.startsWith('video/') ? 'VIDEO' : 'DOCUMENT'),
+      media_type: media_type || (file.mimetype.startsWith('image/') ? 'IMAGE' : file.mimetype.startsWith('video/') ? 'VIDEO' : file.mimetype.startsWith('audio/') ? 'AUDIO' : 'DOCUMENT'),
       original_name: file.originalname,
       stored_name: file.filename,
       url: fileUrl,

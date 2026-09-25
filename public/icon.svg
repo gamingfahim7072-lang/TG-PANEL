@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#090d16"/>
+    </radialGradient>
+    <linearGradient id="neonCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="accentGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#2563eb" stop-opacity="0.1"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <rect width="504" height="504" x="4" y="4" rx="108" fill="none" stroke="url(#neonCyan)" stroke-width="4" stroke-opacity="0.4"/>
+  
+  <!-- Outer Glow Circle -->
+  <circle cx="256" cy="256" r="180" fill="url(#accentGlow)" opacity="0.3"/>
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#06b6d4" stroke-width="2" stroke-dasharray="16 12" opacity="0.4"/>
+
+  <!-- FZ Emblem -->
+  <g filter="url(#glow)">
+    <!-- Letter F -->
+    <path d="M 140 160 L 220 160 C 230 160 236 166 236 176 C 236 186 230 192 220 192 L 176 192 L 176 236 L 210 236 C 220 236 226 242 226 252 C 226 262 220 268 210 268 L 176 268 L 176 336 C 176 348 166 356 156 356 C 146 356 140 348 140 336 Z" fill="url(#neonCyan)"/>
+
+    <!-- Letter Z -->
+    <path d="M 270 160 L 360 160 C 370 160 376 166 376 176 C 376 182 372 188 366 194 L 298 324 L 362 324 C 372 324 378 330 378 340 C 378 350 372 356 362 356 L 270 356 C 260 356 254 350 254 340 C 254 334 258 328 264 322 L 332 192 L 270 192 C 260 192 254 186 254 176 C 254 166 260 160 270 160 Z" fill="url(#neonCyan)"/>
+  </g>
+
+  <!-- Cyber Dots & Lighting Tech Badges -->
+  <circle cx="256" cy="110" r="4" fill="#38bdf8"/>
+  <circle cx="256" cy="402" r="4" fill="#38bdf8"/>
+  <circle cx="110" cy="256" r="4" fill="#38bdf8"/>
+  <circle cx="402" cy="256" r="4" fill="#38bdf8"/>
+</svg>

@@ -88,6 +88,66 @@ class ApiClient {
   }
 
   // Auth
+  public async sendOtp(payload: { identifier: string; purpose?: 'REGISTER' | 'LOGIN' | 'RESET_PASSWORD'; channel?: 'EMAIL' | 'SMS' }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      channel: 'EMAIL' | 'SMS';
+      expiresInSeconds: number;
+      resendCooldown: number;
+      devCode?: string;
+    }>(`/auth/send-otp`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async verifyOtp(payload: { identifier: string; code: string; purpose?: 'REGISTER' | 'LOGIN' | 'RESET_PASSWORD' }) {
+    const res = await this.request<{
+      success: boolean;
+      verified: boolean;
+      message: string;
+      token?: string;
+      user?: User;
+      subscription?: Subscription | null;
+    }>(`/auth/verify-otp`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    if (res.token) this.setToken(res.token);
+    return res;
+  }
+
+  public async registerWithOtp(payload: {
+    email: string;
+    password?: string;
+    full_name: string;
+    code: string;
+    referral_code?: string;
+  }) {
+    const res = await this.request<{
+      success: boolean;
+      message: string;
+      token: string;
+      user: User;
+      subscription: Subscription;
+    }>(`/auth/register-with-otp`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    if (res.token) this.setToken(res.token);
+    return res;
+  }
+
+  public async adminLogin(payload: { email: string; password: string }) {
+    const res = await this.request<{ success: boolean; token: string; user: User }>(`/auth/admin-login`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    if (res.token) this.setToken(res.token);
+    return res;
+  }
+
   public async register(payload: { email: string; password: string; full_name: string; referral_code?: string }) {
     const res = await this.request<{ success: boolean; token: string; user: User }>(`/auth/register`, {
       method: 'POST',

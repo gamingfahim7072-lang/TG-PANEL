@@ -41,7 +41,9 @@ import {
   BotCommand,
   Product,
   ProductCategory,
-  ProductPackage
+  ProductPackage,
+  User,
+  Subscription
 } from '../types';
 import { api } from '../api';
 import { BotCommandBuilder } from '../components/BotCommandBuilder';
@@ -178,9 +180,24 @@ export const getActionDefById = (id: string): MenuActionDefinition => {
 interface BotEditorViewProps {
   bot: TelegramBot | null;
   onOpenLiveSimulator: () => void;
+  subscription?: Subscription | null;
+  onOpenCheckout?: () => void;
+  user?: User | null;
 }
 
-export const BotEditorView: React.FC<BotEditorViewProps> = ({ bot, onOpenLiveSimulator }) => {
+export const BotEditorView: React.FC<BotEditorViewProps> = ({
+  bot,
+  onOpenLiveSimulator,
+  subscription,
+  onOpenCheckout,
+  user
+}) => {
+  const isPremium =
+    user?.role === 'ADMIN' ||
+    user?.role === 'OWNER' ||
+    user?.role === 'SUPER ADMIN' ||
+    subscription?.status === 'ACTIVE';
+
   const [activeTab, setActiveTab] = useState<'SETTINGS' | 'START_MSG' | 'MENUS' | 'BUTTONS' | 'COMMANDS' | 'FAQS' | 'PAYMENTS' | 'VERSIONS'>('MENUS');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -374,6 +391,12 @@ export const BotEditorView: React.FC<BotEditorViewProps> = ({ bot, onOpenLiveSim
     if (!bot) return;
     setError(null);
     setSuccessMessage(null);
+
+    if (!isPremium) {
+      setError('Active Premium subscription required to save or publish bot workflows. Upgrade to unlock unlimited bot customization.');
+      if (onOpenCheckout) onOpenCheckout();
+      return;
+    }
 
     if (deployToTelegram) {
       setDeploying(true);
@@ -792,6 +815,34 @@ export const BotEditorView: React.FC<BotEditorViewProps> = ({ bot, onOpenLiveSim
           </button>
         </div>
       </div>
+
+      {/* Free Tier Notice & Premium Gate */}
+      {!isPremium && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-amber-500/5 animate-in fade-in">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                <span>Bot Connected (Free Tier)</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-extrabold uppercase tracking-wider">PREMIUM BUILDER</span>
+              </h4>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                Your Telegram bot token is connected and active. Deep workflow customization, custom buttons, instant QR payments, and publishing modifications are unlocked on Premium tiers.
+              </p>
+            </div>
+          </div>
+          {onOpenCheckout && (
+            <button
+              onClick={onOpenCheckout}
+              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/20 transition-all shrink-0 cursor-pointer"
+            >
+              Upgrade to Premium
+            </button>
+          )}
+        </div>
+      )}
 
       {successMessage && (
         <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center space-x-2 font-bold animate-in fade-in">

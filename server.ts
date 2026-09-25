@@ -71,17 +71,6 @@ async function startServer() {
     }
   });
 
-  // Direct download route for complete project source archive
-  app.get('/api/download-project', (_req: Request, res: Response) => {
-    const zipPath = path.join(process.cwd(), 'public', 'telesell-full-source.zip');
-    if (fs.existsSync(zipPath)) {
-      res.setHeader('Content-Disposition', 'attachment; filename="telesell-full-source.zip"');
-      res.setHeader('Content-Type', 'application/zip');
-      return res.sendFile(zipPath);
-    }
-    return res.status(404).json({ error: 'Zip file not generated yet' });
-  });
-
   // Mount main API router
   app.use('/api', apiRouter);
 

@@ -13,6 +13,8 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { BroadcastModal } from './components/BroadcastModal';
 import { OrderDetailsModal } from './components/OrderDetailsModal';
 import { AuthModal } from './components/AuthModal';
+import { CinematicIntro } from './components/CinematicIntro';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 // Views
 import { DashboardView } from './views/DashboardView';
@@ -49,6 +51,9 @@ export function App() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [currentView, setCurrentView] = useState<string>('dashboard');
   const [loading, setLoading] = useState(true);
+  const [showIntro, setShowIntro] = useState(() => {
+    return sessionStorage.getItem('fz_intro_seen') !== 'true';
+  });
 
   // Modals state
   const [showConnectBot, setShowConnectBot] = useState(false);
@@ -72,17 +77,11 @@ export function App() {
         setUser(res.user);
         setSubscription(res.subscription);
         await loadCoreData();
+      } else {
+        setUser(null);
       }
     } catch {
-      // If not logged in, attempt quick login to demo account for instant out-of-the-box readiness
-      try {
-        const demoRes = await api.login({ email: 'merchant@telesell.io', password: 'Merchant123!' });
-        if (demoRes.user) {
-          setUser(demoRes.user);
-          setSubscription(demoRes.subscription);
-          await loadCoreData();
-        }
-      } catch {}
+      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -154,13 +153,23 @@ export function App() {
 
   if (!user) {
     return (
-      <AuthModal
-        isOpen={true}
-        onSuccess={loggedUser => {
-          setUser(loggedUser);
-          initAuth();
-        }}
-      />
+      <>
+        {showIntro && (
+          <CinematicIntro
+            onComplete={() => setShowIntro(false)}
+            brandName="FZ PANEL"
+            tagline="NEXT-GEN TELEGRAM COMMERCE & BOT AUTOMATION SAAS"
+          />
+        )}
+        <OfflineIndicator />
+        <AuthModal
+          isOpen={true}
+          onSuccess={loggedUser => {
+            setUser(loggedUser);
+            initAuth();
+          }}
+        />
+      </>
     );
   }
 
@@ -168,6 +177,18 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col antialiased">
+      {/* Cinematic Splash Screen */}
+      {showIntro && (
+        <CinematicIntro
+          onComplete={() => setShowIntro(false)}
+          brandName="FZ PANEL"
+          tagline="NEXT-GEN TELEGRAM COMMERCE & BOT AUTOMATION SAAS"
+        />
+      )}
+
+      {/* Network Connectivity Status */}
+      <OfflineIndicator />
+
       {/* Top Navbar */}
       <Navbar
         user={user}
@@ -233,6 +254,9 @@ export function App() {
             <BotEditorView
               bot={activeBot}
               onOpenLiveSimulator={() => setShowLiveSimulator(true)}
+              user={user}
+              subscription={subscription}
+              onOpenCheckout={() => setShowCheckout(true)}
             />
           )}
 
@@ -282,7 +306,24 @@ export function App() {
 
           {currentView === 'hosting' && <HostingView />}
 
-          {currentView === 'admin' && <AdminView />}
+          {currentView === 'admin' && (
+            (user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN') ? (
+              <AdminView />
+            ) : (
+              <div className="p-8 text-center">
+                <div className="max-w-md mx-auto p-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400">
+                  <h3 className="text-base font-bold">Access Denied</h3>
+                  <p className="text-xs text-slate-300 mt-1">This console is strictly restricted to platform Administrators and Owners.</p>
+                  <button
+                    onClick={() => setCurrentView('dashboard')}
+                    className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Return to Dashboard
+                  </button>
+                </div>
+              </div>
+            )
+          )}
 
           {currentView === 'settings' && <SettingsView user={user} />}
         </main>
