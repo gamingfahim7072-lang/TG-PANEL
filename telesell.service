@@ -1,0 +1,23 @@
+[Unit]
+Description=TeleSell SaaS 24/7 Production Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/telesell-saas
+ExecStart=/usr/bin/node dist/server.cjs
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=KEEP_ALIVE=true
+
+# Security sandbox
+LimitNOFILE=65535
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=telesell-saas
+
+[Install]
+WantedBy=multi-user.target

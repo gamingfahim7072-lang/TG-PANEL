@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  telesell-saas:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telesell_production_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - APP_URL=https://your-domain.com
+      - JWT_SECRET=change_me_to_a_secure_jwt_secret_32_chars
+      - ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - KEEP_ALIVE=true
+    volumes:
+      - telesell_data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  telesell_data:
+    driver: local
