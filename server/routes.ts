@@ -26,7 +26,9 @@ import {
   PaymentProof,
   ProductPackage,
   OtpRecord,
-  Subscription
+  Subscription,
+  UpiConfig,
+  SubscriptionPlan
 } from './db.js';
 import { CryptoService } from './crypto.js';
 import {
@@ -662,6 +664,168 @@ apiRouter.post('/auth/change-password', authenticate, async (req: AuthenticatedR
     });
 
     return res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update User Profile
+apiRouter.put('/auth/profile', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { full_name, username, telegram_username, avatar_url } = req.body;
+
+    if (full_name !== undefined) user.full_name = String(full_name).trim();
+    if (username !== undefined) {
+      const cleanUser = String(username).trim().toLowerCase();
+      const conflict = db.users.find(u => u.id !== user.id && u.username?.toLowerCase() === cleanUser);
+      if (conflict) {
+        return res.status(400).json({ success: false, error: 'Username is already taken.' });
+      }
+      user.username = cleanUser;
+    }
+    if (telegram_username !== undefined) user.telegram_username = String(telegram_username).trim().replace('@', '');
+    if (avatar_url !== undefined) user.avatar_url = String(avatar_url).trim();
+
+    user.updated_at = new Date().toISOString();
+    db.saveImmediately();
+
+    return res.json({
+      success: true,
+      message: 'Profile updated successfully.',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        full_name: user.full_name,
+        avatar_url: user.avatar_url,
+        telegram_username: user.telegram_username,
+        role: user.role,
+        referral_code: user.referral_code,
+        wallet_balance: user.wallet_balance || 0,
+        privacy_settings: user.privacy_settings
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update Privacy Settings
+apiRouter.put('/auth/privacy', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { profile_visibility, username_visibility, activity_status, notifications_enabled, analytics_preferences, connected_bot_visibility } = req.body;
+
+    user.privacy_settings = {
+      ...(user.privacy_settings || {}),
+      ...(profile_visibility !== undefined ? { profile_visibility } : {}),
+      ...(username_visibility !== undefined ? { username_visibility: Boolean(username_visibility) } : {}),
+      ...(activity_status !== undefined ? { activity_status: Boolean(activity_status) } : {}),
+      ...(notifications_enabled !== undefined ? { notifications_enabled: Boolean(notifications_enabled) } : {}),
+      ...(analytics_preferences !== undefined ? { analytics_preferences: Boolean(analytics_preferences) } : {}),
+      ...(connected_bot_visibility !== undefined ? { connected_bot_visibility: Boolean(connected_bot_visibility) } : {})
+    };
+
+    user.updated_at = new Date().toISOString();
+    db.saveImmediately();
+
+    return res.json({
+      success: true,
+      message: 'Privacy settings updated successfully.',
+      privacy_settings: user.privacy_settings
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Active Sessions List
+apiRouter.get('/auth/sessions', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  let sessions = db.sessions.filter(s => s.user_id === user.id);
+  if (sessions.length === 0) {
+    sessions = [{
+      id: `sess-${user.id.slice(-6)}`,
+      user_id: user.id,
+      token: 'current',
+      device_name: 'Current Browser Session',
+      browser: 'Web App / PWA',
+      os: 'Client Device',
+      ip_address: req.ip || '127.0.0.1',
+      last_active_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+      created_at: user.created_at
+    }];
+  }
+  return res.json({ success: true, sessions });
+});
+
+// Logout Session (server-side invalidation)
+apiRouter.post('/auth/logout', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (token) {
+    db.sessions = db.sessions.filter(s => s.token !== token);
+    db.saveImmediately();
+  }
+  logAudit({
+    userId: user.id,
+    userEmail: user.email,
+    action: 'USER_LOGOUT',
+    resourceType: 'SESSION',
+    req
+  });
+  return res.json({ success: true, message: 'Logged out successfully.' });
+});
+
+// Logout All Devices
+apiRouter.post('/auth/logout-all-devices', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  db.sessions = db.sessions.filter(s => s.user_id !== user.id);
+  db.saveImmediately();
+
+  logAudit({
+    userId: user.id,
+    userEmail: user.email,
+    action: 'USER_LOGOUT_ALL_DEVICES',
+    resourceType: 'SESSION',
+    req
+  });
+
+  return res.json({ success: true, message: 'Logged out from all active devices successfully.' });
+});
+
+// Delete Account (Permanent deletion & cleanup)
+apiRouter.delete('/auth/delete-account', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { confirmation } = req.body;
+
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ success: false, error: 'Please confirm account deletion by sending confirmation: "DELETE".' });
+    }
+
+    if (user.role === 'OWNER' || user.role === 'SUPER ADMIN') {
+      return res.status(403).json({ success: false, error: 'System Owner account cannot be deleted.' });
+    }
+
+    db.sessions = db.sessions.filter(s => s.user_id !== user.id);
+    db.subscriptions = db.subscriptions.filter(s => s.user_id !== user.id);
+    db.telegram_bots = db.telegram_bots.filter(b => b.owner_id !== user.id);
+    db.users = db.users.filter(u => u.id !== user.id);
+    db.saveImmediately();
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'USER_ACCOUNT_DELETED',
+      resourceType: 'USER',
+      resourceId: user.id,
+      req
+    });
+
+    return res.json({ success: true, message: 'Your account and associated resources have been removed.' });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }

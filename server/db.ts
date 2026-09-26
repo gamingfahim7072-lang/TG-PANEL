@@ -8,6 +8,7 @@ export interface User {
   password_hash: string;
   role: 'USER' | 'CUSTOMER' | 'RESELLER' | 'ADMIN' | 'OWNER' | 'SUPER ADMIN' | string;
   full_name: string;
+  avatar_url?: string;
   telegram_username?: string;
   telegram_id?: string;
   is_email_verified: boolean;
@@ -28,93 +29,26 @@ export interface User {
   last_login_ip?: string;
   failed_login_attempts?: number;
   lockout_until?: string;
+  privacy_settings?: {
+    profile_visibility?: 'PUBLIC' | 'PRIVATE';
+    username_visibility?: boolean;
+    activity_status?: boolean;
+    notifications_enabled?: boolean;
+    analytics_preferences?: boolean;
+    connected_bot_visibility?: boolean;
+  };
   created_at: string;
   updated_at: string;
 }
 
-export interface AdminPermission {
+export interface UpiConfig {
   id: string;
-  admin_user_id: string;
-  permissions: string[]; // e.g. ['users.view', 'users.edit', 'payments.verify', 'apk.upload', 'app.update', ...]
-  updated_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BalanceTransaction {
-  id: string;
-  user_id: string;
-  user_email?: string;
-  type: 'CREDIT' | 'DEBIT' | 'REFUND' | 'ADJUSTMENT';
-  amount: number;
-  previous_balance: number;
-  new_balance: number;
-  reason: string;
-  order_id?: string;
-  payment_id?: string;
-  actor_id?: string;
-  created_at: string;
-}
-
-export interface ApkFile {
-  id: string;
-  owner_id: string;
-  app_name: string;
-  version: string;
-  version_code: number;
-  file_name: string;
-  stored_file_path: string;
-  download_url: string;
-  file_size: number;
-  file_hash?: string;
-  release_notes: string;
+  upi_id: string;
+  upi_name: string;
+  display_name: string;
+  is_default: boolean;
   is_active: boolean;
-  download_count: number;
   created_at: string;
-  updated_at: string;
-}
-
-export interface AppRelease {
-  id: string;
-  owner_id: string;
-  app_name: string;
-  version_name: string;
-  version_code: number;
-  apk_file_id?: string;
-  apk_url: string;
-  release_notes: string;
-  minimum_version_code: number;
-  force_update: boolean;
-  release_date: string;
-  status: 'DRAFT' | 'TESTING' | 'PUBLISHED' | 'ARCHIVED';
-  download_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AppConfig {
-  id: string;
-  owner_id: string;
-  app_name: string;
-  package_name?: string;
-  logo_url?: string;
-  support_url: string;
-  telegram_channel?: string;
-  support_username: string;
-  payment_upi?: string;
-  maintenance_mode: boolean;
-  announcement?: string;
-  minimum_version_code: number;
-  latest_version_code: number;
-  latest_version_name: string;
-  download_url: string;
-  force_update: boolean;
-  feature_flags: Record<string, boolean>;
-  github_repo?: string;
-  github_branch?: string;
-  github_workflow?: string;
-  ci_build_status?: 'IDLE' | 'BUILDING' | 'SUCCESS' | 'FAILED';
-  last_build_at?: string;
   updated_at: string;
 }
 
@@ -122,8 +56,12 @@ export interface Session {
   id: string;
   user_id: string;
   token: string;
-  user_agent?: string;
+  device_name?: string;
+  browser?: string;
+  os?: string;
   ip_address?: string;
+  user_agent?: string;
+  last_active_at?: string;
   expires_at: string;
   created_at: string;
 }
@@ -146,16 +84,24 @@ export interface OtpRecord {
 export interface SubscriptionPlan {
   id: string;
   name: string;
+  plan_id?: string;
+  duration?: number;
+  duration_unit?: 'DAYS' | 'MONTHS' | 'YEARS';
+  price?: number;
   price_monthly: number;
   price_yearly: number;
   currency: string;
+  description?: string;
   features: string[];
   max_bots: number;
   max_products: number;
   max_broadcasts_per_month: number;
-  status: 'ACTIVE' | 'ARCHIVED';
+  status: 'ACTIVE' | 'ARCHIVED' | 'DISABLED';
+  active?: boolean;
+  display_order?: number;
   is_popular?: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Subscription {
@@ -669,6 +615,7 @@ export interface DatabaseSchema {
   app_releases: AppRelease[];
   app_configs: AppConfig[];
   otp_records: OtpRecord[];
+  upi_configs: UpiConfig[];
 }
 
 export class Database {
@@ -713,6 +660,20 @@ export class Database {
         result[key] = defaultData[key];
       }
     }
+
+    // Ensure custom monthly & yearly subscription plans are present
+    if (!result.subscription_plans.some((p: any) => p.id === 'plan-monthly')) {
+      result.subscription_plans.unshift(
+        defaultData.subscription_plans.find(p => p.id === 'plan-monthly')!,
+        defaultData.subscription_plans.find(p => p.id === 'plan-yearly')!
+      );
+    }
+
+    // Ensure upi_configs present
+    if (!result.upi_configs || result.upi_configs.length === 0) {
+      result.upi_configs = defaultData.upi_configs;
+    }
+
     return result;
   }
 
@@ -723,68 +684,61 @@ export class Database {
       sessions: [],
       subscription_plans: [
         {
-          id: 'plan-starter',
-          name: 'Starter Tier',
-          price_monthly: 499,
-          price_yearly: 4990,
+          id: 'plan-monthly',
+          name: 'Monthly Pro',
+          plan_id: 'plan-monthly',
+          duration: 30,
+          duration_unit: 'DAYS',
+          price: 299,
+          price_monthly: 299,
+          price_yearly: 2990,
           currency: 'INR',
+          description: 'Full Bot No-Code Builder, Multi-Level Menus, Instant UPI & Automated Delivery',
           features: [
-            '1 Connected Telegram Bot',
-            'Up to 15 Products & Licenses',
-            '500 Broadcast Messages / mo',
-            'Automated License Key Delivery',
-            'Basic Analytics & CRM',
-            'Community Support'
+            '10 Connected Telegram Bots',
+            'Full Bot No-Code Flow & Menu Builder',
+            'Instant Dynamic UPI & QR Payments',
+            'Automated License Key & File Delivery',
+            'Custom Interactive Action Buttons',
+            'Broadcast Campaign Center',
+            'Customer CRM & Digital Wallet'
           ],
-          max_bots: 1,
-          max_products: 15,
-          max_broadcasts_per_month: 500,
+          max_bots: 10,
+          max_products: 100,
+          max_broadcasts_per_month: 25000,
           status: 'ACTIVE',
-          is_popular: false,
-          created_at: now
-        },
-        {
-          id: 'plan-pro',
-          name: 'Pro Merchant',
-          price_monthly: 1499,
-          price_yearly: 14990,
-          currency: 'INR',
-          features: [
-            'Up to 5 Connected Telegram Bots',
-            'Unlimited Products & Files',
-            '10,000 Broadcast Messages / mo',
-            'Instant Digital File Delivery',
-            'Advanced CRM & Customer Wallet',
-            'Coupon & Discount Engine',
-            'Full Reseller & Referral Engine',
-            'Priority 24/7 Support'
-          ],
-          max_bots: 5,
-          max_products: 500,
-          max_broadcasts_per_month: 10000,
-          status: 'ACTIVE',
+          active: true,
+          display_order: 1,
           is_popular: true,
           created_at: now
         },
         {
-          id: 'plan-enterprise',
-          name: 'Enterprise Agency',
-          price_monthly: 3999,
-          price_yearly: 39990,
+          id: 'plan-yearly',
+          name: 'Yearly VIP Pro',
+          plan_id: 'plan-yearly',
+          duration: 365,
+          duration_unit: 'DAYS',
+          price: 2499,
+          price_monthly: 208,
+          price_yearly: 2499,
           currency: 'INR',
+          description: 'All Pro Capabilities + Dedicated High-Speed Node & Priority Webhook Ingress',
           features: [
             'Unlimited Connected Telegram Bots',
-            'Unlimited Products & File Hosting',
-            'Unlimited Broadcast Messaging',
-            'Custom Domain & Webhook Routing',
-            'White-label Bot Engine',
-            'Multi-Currency & Custom Gateways',
-            'Dedicated Account Manager'
+            'Full Bot No-Code Flow & Menu Builder',
+            'Instant Dynamic UPI & QR Payments',
+            'Automated License Key & File Delivery',
+            'Custom Action Buttons & Commands',
+            'Priority 24/7 Long-Polling Node',
+            'Custom Webhook & White-label Support',
+            'Dedicated 24/7 Priority Support'
           ],
           max_bots: 999,
-          max_products: 99999,
+          max_products: 9999,
           max_broadcasts_per_month: 999999,
           status: 'ACTIVE',
+          active: true,
+          display_order: 2,
           is_popular: false,
           created_at: now
         }
@@ -911,7 +865,19 @@ export class Database {
           updated_at: now
         }
       ],
-      otp_records: []
+      otp_records: [],
+      upi_configs: [
+        {
+          id: 'upi-primary',
+          upi_id: 'fzpanel@upi',
+          upi_name: 'FZ System Merchant',
+          display_name: 'Primary Official UPI QR',
+          is_default: true,
+          is_active: true,
+          created_at: now,
+          updated_at: now
+        }
+      ]
     };
   }
 
@@ -1015,6 +981,8 @@ export class Database {
   public set app_configs(val: AppConfig[]) { this.data.app_configs = val; }
   public get otp_records(): OtpRecord[] { return this.data.otp_records || []; }
   public set otp_records(val: OtpRecord[]) { this.data.otp_records = val; }
+  public get upi_configs(): UpiConfig[] { return this.data.upi_configs || []; }
+  public set upi_configs(val: UpiConfig[]) { this.data.upi_configs = val; }
 }
 
 export const db = new Database();
