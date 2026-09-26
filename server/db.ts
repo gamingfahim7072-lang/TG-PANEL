@@ -128,14 +128,115 @@ export interface Payment {
   currency: string;
   provider: 'RAZORPAY' | 'STRIPE' | 'CASHFREE' | 'PHONEPE' | 'MANUAL' | 'SANDBOX';
   status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
+  order_type?: 'PRODUCT_KEY' | 'SUBSCRIPTION';
+  transaction_id?: string;
   signature?: string;
   gateway_order_id?: string;
   gateway_payment_id?: string;
   plan_id?: string;
   billing_cycle?: 'MONTHLY' | 'YEARLY';
   metadata?: Record<string, any>;
+  verified_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface PaymentBankSettings {
+  id: string;
+  display_name: string;
+  currency: string;
+  min_withdrawal: number;
+  max_withdrawal: number;
+  daily_withdrawal_limit: number;
+  auto_approval_threshold: number;
+  disclaimer: string;
+  updated_at: string;
+}
+
+export interface LedgerTransaction {
+  id: string;
+  source: 'PRODUCT_KEY' | 'SUBSCRIPTION' | 'WITHDRAWAL' | 'REFUND' | 'MANUAL_CREDIT' | 'ADJUSTMENT';
+  type: 'CREDIT' | 'DEBIT';
+  amount: number;
+  currency: string;
+  order_id?: string;
+  payment_id?: string;
+  transaction_id?: string;
+  user_id?: string;
+  user_email?: string;
+  customer_name?: string;
+  product_name?: string;
+  plan_name?: string;
+  status: 'CREDITED' | 'DEBITED' | 'PENDING' | 'REJECTED';
+  description: string;
+  metadata?: any;
+  created_at: string;
+}
+
+export interface ProductKey {
+  id: string;
+  product_id: string;
+  package_id?: string;
+  key: string;
+  status: 'AVAILABLE' | 'RESERVED' | 'SOLD' | 'DISABLED';
+  created_at: string;
+  reserved_at?: string;
+  sold_at?: string;
+  sold_to_user_id?: string;
+  order_id?: string;
+}
+
+export interface PaymentProviderConfig {
+  id: string;
+  provider: 'UPI' | 'RAZORPAY' | 'CASHFREE' | 'PHONEPE' | 'STRIPE' | 'SANDBOX';
+  name: string;
+  display_name: string;
+  is_enabled: boolean;
+  environment: 'TEST' | 'LIVE';
+  merchant_id?: string;
+  api_key?: string;
+  api_secret?: string;
+  webhook_secret?: string;
+  instructions?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  user_id: string;
+  user_email?: string;
+  user_name?: string;
+  amount: number;
+  currency: string;
+  method: 'UPI' | 'BANK_TRANSFER';
+  upi_id?: string;
+  bank_name?: string;
+  account_number?: string;
+  ifsc?: string;
+  status: 'PENDING' | 'PROCESSING' | 'PAID' | 'REJECTED' | 'CANCELLED';
+  reference_id?: string;
+  notes?: string;
+  admin_notes?: string;
+  created_at: string;
+  updated_at: string;
+  processed_at?: string;
+  processed_by?: string;
+}
+
+export interface RefundRecord {
+  id: string;
+  order_id: string;
+  payment_id?: string;
+  user_id?: string;
+  customer_name?: string;
+  amount: number;
+  currency: string;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PROCESSED';
+  created_at: string;
+  processed_at?: string;
+  processed_by?: string;
 }
 
 export interface PaymentEvent {
@@ -146,6 +247,98 @@ export interface PaymentEvent {
   payload: any;
   processed: boolean;
   created_at: string;
+}
+
+export interface AdminPermission {
+  id: string;
+  admin_user_id: string;
+  permissions: string[];
+  updated_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BalanceTransaction {
+  id: string;
+  user_id: string;
+  user_email?: string;
+  type: 'CREDIT' | 'DEBIT';
+  amount: number;
+  previous_balance?: number;
+  new_balance?: number;
+  reason?: string;
+  description?: string;
+  reference_id?: string;
+  payment_id?: string;
+  created_at: string;
+}
+
+export interface ApkFile {
+  id: string;
+  owner_id?: string;
+  app_name?: string;
+  version: string;
+  version_code?: number;
+  file_name: string;
+  stored_file_path?: string;
+  file_path?: string;
+  download_url?: string;
+  file_size: number;
+  release_notes?: string;
+  is_active?: boolean;
+  download_count?: number;
+  uploaded_at?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AppRelease {
+  id: string;
+  owner_id?: string;
+  app_name?: string;
+  version?: string;
+  version_name?: string;
+  version_code?: number;
+  apk_file_id?: string;
+  apk_url?: string;
+  release_notes: string;
+  minimum_version_code?: number;
+  force_update?: boolean;
+  is_mandatory?: boolean;
+  release_date?: string;
+  status?: string;
+  download_count?: number;
+  published_at?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AppConfig {
+  id: string;
+  owner_id?: string;
+  app_name: string;
+  package_name?: string;
+  logo_url?: string;
+  support_url?: string;
+  telegram_channel?: string;
+  support_username?: string;
+  payment_upi?: string;
+  maintenance_mode?: boolean;
+  announcement?: string;
+  minimum_version_code?: number;
+  latest_version_code?: number;
+  latest_version_name?: string;
+  download_url?: string;
+  force_update?: boolean;
+  feature_flags?: Record<string, boolean>;
+  github_repo?: string;
+  github_branch?: string;
+  github_workflow?: string;
+  ci_build_status?: string;
+  last_build_at?: string;
+  theme?: string;
+  settings?: any;
+  updated_at: string;
 }
 
 export interface TelegramBot {
@@ -475,6 +668,9 @@ export interface Order {
   status: 'PENDING' | 'PAID' | 'PROCESSING' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED' | 'UNDER_VERIFICATION';
   payment_provider: string;
   payment_id?: string;
+  order_type?: 'PRODUCT_KEY' | 'SUBSCRIPTION';
+  transaction_id?: string;
+  key_delivered?: string;
   delivered_type: 'LICENSE_KEY' | 'DIGITAL_FILE' | 'CUSTOM_MESSAGE' | 'SERIAL_KEY';
   delivered_content?: string;
   download_url?: string;
@@ -616,6 +812,12 @@ export interface DatabaseSchema {
   app_configs: AppConfig[];
   otp_records: OtpRecord[];
   upi_configs: UpiConfig[];
+  payment_bank_settings: PaymentBankSettings;
+  ledger_transactions: LedgerTransaction[];
+  product_keys: ProductKey[];
+  payment_providers: PaymentProviderConfig[];
+  withdrawals: WithdrawalRequest[];
+  refunds: RefundRecord[];
 }
 
 export class Database {
@@ -673,6 +875,29 @@ export class Database {
     if (!result.upi_configs || result.upi_configs.length === 0) {
       result.upi_configs = defaultData.upi_configs;
     }
+
+    // Ensure payment_bank_settings present
+    if (!result.payment_bank_settings) {
+      result.payment_bank_settings = defaultData.payment_bank_settings;
+    }
+    if (!result.ledger_transactions) result.ledger_transactions = [];
+    if (!result.product_keys) {
+      result.product_keys = (result.license_keys || []).map((k: any) => ({
+        id: k.id || `key-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        product_id: k.product_id,
+        key: k.license_key || k.key,
+        status: k.is_redeemed ? 'SOLD' : 'AVAILABLE',
+        created_at: k.created_at || new Date().toISOString(),
+        sold_at: k.redeemed_at,
+        sold_to_user_id: k.redeemed_by_customer_id,
+        order_id: k.order_id
+      }));
+    }
+    if (!result.payment_providers || result.payment_providers.length === 0) {
+      result.payment_providers = defaultData.payment_providers;
+    }
+    if (!result.withdrawals) result.withdrawals = [];
+    if (!result.refunds) result.refunds = [];
 
     return result;
   }
@@ -877,7 +1102,91 @@ export class Database {
           created_at: now,
           updated_at: now
         }
-      ]
+      ],
+      payment_bank_settings: {
+        id: 'fz-bank-settings',
+        display_name: 'FZ PAYMENT BANK',
+        currency: 'INR',
+        min_withdrawal: 500,
+        max_withdrawal: 100000,
+        daily_withdrawal_limit: 250000,
+        auto_approval_threshold: 5000,
+        disclaimer: 'FZ PAYMENT BANK is an internal verified financial ledger & payment management system. Real funds are processed and held securely by official payment gateways, banking partners, and UPI rails.',
+        updated_at: now
+      },
+      ledger_transactions: [],
+      product_keys: [],
+      payment_providers: [
+        {
+          id: 'prov-upi',
+          provider: 'UPI',
+          name: 'Direct UPI & Dynamic QR',
+          display_name: 'Official UPI / QR Rails',
+          is_enabled: true,
+          environment: 'LIVE',
+          instructions: 'Pay directly via PhonePe, Google Pay, Paytm, or any BHIM UPI application using real-time dynamic QR codes.',
+          created_at: now,
+          updated_at: now
+        },
+        {
+          id: 'prov-razorpay',
+          provider: 'RAZORPAY',
+          name: 'Razorpay Payment Gateway',
+          display_name: 'Cards / NetBanking / UPI Gateway',
+          is_enabled: false,
+          environment: 'TEST',
+          merchant_id: '',
+          api_key: '',
+          api_secret: '',
+          webhook_secret: '',
+          instructions: 'Instant card, netbanking, and UPI gateway collection with real-time webhooks.',
+          created_at: now,
+          updated_at: now
+        },
+        {
+          id: 'prov-cashfree',
+          provider: 'CASHFREE',
+          name: 'Cashfree Payments',
+          display_name: 'Cashfree PG & Auto Payouts',
+          is_enabled: false,
+          environment: 'TEST',
+          merchant_id: '',
+          api_key: '',
+          api_secret: '',
+          webhook_secret: '',
+          instructions: 'Seamless domestic and international payment gateway integration.',
+          created_at: now,
+          updated_at: now
+        },
+        {
+          id: 'prov-phonepe',
+          provider: 'PHONEPE',
+          name: 'PhonePe PG',
+          display_name: 'PhonePe Payment Gateway',
+          is_enabled: false,
+          environment: 'TEST',
+          merchant_id: '',
+          api_key: '',
+          api_secret: '',
+          webhook_secret: '',
+          instructions: 'Official PhonePe Merchant Payment Gateway with webhook callback verification.',
+          created_at: now,
+          updated_at: now
+        },
+        {
+          id: 'prov-sandbox',
+          provider: 'SANDBOX',
+          name: 'Simulator / Sandbox Rail',
+          display_name: 'Instant Test Sandbox',
+          is_enabled: true,
+          environment: 'TEST',
+          instructions: 'Automated test suite simulation rail for immediate sandbox flow verification.',
+          created_at: now,
+          updated_at: now
+        }
+      ],
+      withdrawals: [],
+      refunds: []
     };
   }
 
@@ -983,6 +1292,33 @@ export class Database {
   public set otp_records(val: OtpRecord[]) { this.data.otp_records = val; }
   public get upi_configs(): UpiConfig[] { return this.data.upi_configs || []; }
   public set upi_configs(val: UpiConfig[]) { this.data.upi_configs = val; }
+  public get payment_bank_settings(): PaymentBankSettings {
+    if (!this.data.payment_bank_settings) {
+      this.data.payment_bank_settings = {
+        id: 'fz-bank-settings',
+        display_name: 'FZ PAYMENT BANK',
+        currency: 'INR',
+        min_withdrawal: 500,
+        max_withdrawal: 100000,
+        daily_withdrawal_limit: 250000,
+        auto_approval_threshold: 5000,
+        disclaimer: 'FZ PAYMENT BANK is an internal verified financial ledger & payment management system. Real funds are processed and held securely by official payment gateways, banking partners, and UPI rails.',
+        updated_at: new Date().toISOString()
+      };
+    }
+    return this.data.payment_bank_settings;
+  }
+  public set payment_bank_settings(val: PaymentBankSettings) { this.data.payment_bank_settings = val; }
+  public get ledger_transactions(): LedgerTransaction[] { return this.data.ledger_transactions || []; }
+  public set ledger_transactions(val: LedgerTransaction[]) { this.data.ledger_transactions = val; }
+  public get product_keys(): ProductKey[] { return this.data.product_keys || []; }
+  public set product_keys(val: ProductKey[]) { this.data.product_keys = val; }
+  public get payment_providers(): PaymentProviderConfig[] { return this.data.payment_providers || []; }
+  public set payment_providers(val: PaymentProviderConfig[]) { this.data.payment_providers = val; }
+  public get withdrawals(): WithdrawalRequest[] { return this.data.withdrawals || []; }
+  public set withdrawals(val: WithdrawalRequest[]) { this.data.withdrawals = val; }
+  public get refunds(): RefundRecord[] { return this.data.refunds || []; }
+  public set refunds(val: RefundRecord[]) { this.data.refunds = val; }
 }
 
 export const db = new Database();

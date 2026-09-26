@@ -28,7 +28,13 @@ import {
   OtpRecord,
   Subscription,
   UpiConfig,
-  SubscriptionPlan
+  SubscriptionPlan,
+  ProductKey,
+  LedgerTransaction,
+  PaymentBankSettings,
+  PaymentProviderConfig,
+  WithdrawalRequest,
+  RefundRecord
 } from './db.js';
 import { CryptoService } from './crypto.js';
 import {
@@ -900,11 +906,599 @@ apiRouter.get('/dashboard/stats', authenticate, async (req: AuthenticatedRequest
 });
 
 // ==========================================
-// 3. SUBSCRIPTION & PAYMENT CHECKOUT
+// 3. FZ PAYMENT BANK, SUBSCRIPTIONS & KEYS
+// ==========================================
+
+// Get FZ Payment Bank Stats (Available balance strictly calculated from verified ledger)
+apiRouter.get('/fz-bank/stats', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAdmin = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to access FZ Payment Bank.' });
+    }
+    const stats = PaymentService.getFZBankStats();
+    return res.json({ success: true, stats });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get FZ Payment Bank Ledger / Transactions with search & filters
+apiRouter.get('/fz-bank/ledger', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAdmin = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, error: 'Unauthorized.' });
+    }
+
+    const { source, status, type, search } = req.query;
+    let items = db.ledger_transactions || [];
+
+    if (source) items = items.filter(t => t.source === String(source));
+    if (status) items = items.filter(t => t.status === String(status));
+    if (type) items = items.filter(t => t.type === String(type));
+
+    if (search) {
+      const q = String(search).toLowerCase();
+      items = items.filter(t =>
+        (t.transaction_id && t.transaction_id.toLowerCase().includes(q)) ||
+        (t.order_id && t.order_id.toLowerCase().includes(q)) ||
+        (t.customer_name && t.customer_name.toLowerCase().includes(q)) ||
+        (t.user_email && t.user_email.toLowerCase().includes(q)) ||
+        (t.description && t.description.toLowerCase().includes(q))
+      );
+    }
+
+    return res.json({ success: true, transactions: items });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Bank Settings (Get & Update)
+apiRouter.get('/fz-bank/settings', authenticate, async (_req: AuthenticatedRequest, res: Response) => {
+  return res.json({ success: true, settings: db.payment_bank_settings });
+});
+
+apiRouter.put('/fz-bank/settings', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
+      return res.status(403).json({ success: false, error: 'Only Owner can modify financial bank settings.' });
+    }
+
+    const { display_name, currency, min_withdrawal, max_withdrawal, daily_withdrawal_limit, auto_approval_threshold } = req.body;
+    const settings = db.payment_bank_settings;
+
+    if (display_name !== undefined) settings.display_name = String(display_name).trim();
+    if (currency !== undefined) settings.currency = String(currency).trim();
+    if (min_withdrawal !== undefined) settings.min_withdrawal = Number(min_withdrawal);
+    if (max_withdrawal !== undefined) settings.max_withdrawal = Number(max_withdrawal);
+    if (daily_withdrawal_limit !== undefined) settings.daily_withdrawal_limit = Number(daily_withdrawal_limit);
+    if (auto_approval_threshold !== undefined) settings.auto_approval_threshold = Number(auto_approval_threshold);
+    settings.updated_at = new Date().toISOString();
+
+    db.saveImmediately();
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'FZ_BANK_SETTINGS_UPDATED',
+      resourceType: 'FINANCIAL',
+      req
+    });
+
+    return res.json({ success: true, settings });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Payment Providers Settings
+apiRouter.get('/fz-bank/providers', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isAdmin = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+  if (!isAdmin) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+  const providers = (db.payment_providers || []).map(p => ({
+    ...p,
+    api_secret: p.api_secret ? '••••••••' + p.api_secret.slice(-4) : '',
+    webhook_secret: p.webhook_secret ? '••••••••' + p.webhook_secret.slice(-4) : ''
+  }));
+  return res.json({ success: true, providers });
+});
+
+apiRouter.put('/fz-bank/providers/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
+      return res.status(403).json({ success: false, error: 'Only Owner can configure payment gateways.' });
+    }
+
+    const { id } = req.params;
+    const { is_enabled, environment, merchant_id, api_key, api_secret, webhook_secret, instructions, display_name } = req.body;
+
+    let prov = db.payment_providers.find(p => p.id === id);
+    const nowStr = new Date().toISOString();
+
+    if (!prov) {
+      prov = {
+        id,
+        provider: id.replace('prov-', '').toUpperCase() as any,
+        name: display_name || id,
+        display_name: display_name || id,
+        is_enabled: !!is_enabled,
+        environment: environment || 'TEST',
+        merchant_id,
+        api_key,
+        api_secret,
+        webhook_secret,
+        instructions,
+        created_at: nowStr,
+        updated_at: nowStr
+      };
+      db.payment_providers.push(prov);
+    } else {
+      if (is_enabled !== undefined) prov.is_enabled = !!is_enabled;
+      if (environment !== undefined) prov.environment = environment;
+      if (display_name !== undefined) prov.display_name = display_name;
+      if (merchant_id !== undefined) prov.merchant_id = merchant_id;
+      if (api_key !== undefined) prov.api_key = api_key;
+      if (api_secret && !api_secret.includes('••••')) prov.api_secret = api_secret;
+      if (webhook_secret && !webhook_secret.includes('••••')) prov.webhook_secret = webhook_secret;
+      if (instructions !== undefined) prov.instructions = instructions;
+      prov.updated_at = nowStr;
+    }
+
+    db.saveImmediately();
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'PAYMENT_PROVIDER_UPDATED',
+      resourceType: 'PAYMENT_PROVIDER',
+      resourceId: id,
+      req
+    });
+
+    return res.json({ success: true, provider: prov });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// UPI Configuration List & Management
+apiRouter.get('/fz-bank/upi', authenticate, async (_req: AuthenticatedRequest, res: Response) => {
+  return res.json({ success: true, configs: db.upi_configs || [] });
+});
+
+apiRouter.post('/fz-bank/upi', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN' && user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, error: 'Unauthorized.' });
+    }
+
+    const { upi_id, upi_name, display_name, is_default, is_active } = req.body;
+    if (!upi_id) return res.status(400).json({ success: false, error: 'UPI ID is required.' });
+
+    const nowStr = new Date().toISOString();
+    if (is_default) {
+      db.upi_configs.forEach(u => (u.is_default = false));
+    }
+
+    const newUpi: UpiConfig = {
+      id: `upi-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      upi_id: String(upi_id).trim(),
+      upi_name: upi_name ? String(upi_name).trim() : 'FZ Merchant',
+      display_name: display_name ? String(display_name).trim() : 'Primary UPI',
+      is_default: is_default !== undefined ? !!is_default : db.upi_configs.length === 0,
+      is_active: is_active !== undefined ? !!is_active : true,
+      created_at: nowStr,
+      updated_at: nowStr
+    };
+
+    db.upi_configs.push(newUpi);
+    db.saveImmediately();
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'UPI_CONFIG_ADDED',
+      resourceType: 'UPI',
+      resourceId: newUpi.id,
+      req
+    });
+
+    return res.json({ success: true, config: newUpi });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+apiRouter.delete('/fz-bank/upi/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
+      return res.status(403).json({ success: false, error: 'Only Owner can remove UPI configurations.' });
+    }
+
+    const { id } = req.params;
+    db.upi_configs = db.upi_configs.filter(u => u.id !== id);
+    if (db.upi_configs.length > 0 && !db.upi_configs.some(u => u.is_default)) {
+      db.upi_configs[0].is_default = true;
+    }
+    db.saveImmediately();
+    return res.json({ success: true, message: 'UPI configuration removed.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Withdrawals Management
+apiRouter.get('/fz-bank/withdrawals', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isAdmin = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+  const list = isAdmin ? db.withdrawals : db.withdrawals.filter(w => w.user_id === user.id);
+  return res.json({ success: true, withdrawals: list });
+});
+
+apiRouter.post('/fz-bank/withdrawals', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAdmin = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAdmin) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+    const { amount, method, upi_id, bank_name, account_number, ifsc, notes } = req.body;
+    const reqAmount = Number(amount);
+
+    if (!reqAmount || reqAmount <= 0) {
+      return res.status(400).json({ success: false, error: 'Valid withdrawal amount is required.' });
+    }
+
+    const stats = PaymentService.getFZBankStats();
+    if (reqAmount > stats.availableBalance) {
+      return res.status(400).json({
+        success: false,
+        error: `Requested amount (₹${reqAmount}) exceeds verified available balance (₹${stats.availableBalance.toFixed(2)}).`
+      });
+    }
+
+    const settings = db.payment_bank_settings;
+    if (reqAmount < settings.min_withdrawal) {
+      return res.status(400).json({
+        success: false,
+        error: `Minimum withdrawal amount is ₹${settings.min_withdrawal}.`
+      });
+    }
+
+    const nowStr = new Date().toISOString();
+    const withdrawal: WithdrawalRequest = {
+      id: `wth-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      user_id: user.id,
+      user_email: user.email,
+      user_name: user.full_name,
+      amount: reqAmount,
+      currency: settings.currency || 'INR',
+      method: method || 'UPI',
+      upi_id,
+      bank_name,
+      account_number,
+      ifsc,
+      status: 'PENDING',
+      notes,
+      created_at: nowStr,
+      updated_at: nowStr
+    };
+
+    db.withdrawals.unshift(withdrawal);
+    db.saveImmediately();
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'WITHDRAWAL_REQUESTED',
+      resourceType: 'WITHDRAWAL',
+      resourceId: withdrawal.id,
+      metadata: { amount: reqAmount, method },
+      req
+    });
+
+    return res.json({ success: true, withdrawal });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+apiRouter.put('/fz-bank/withdrawals/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
+      return res.status(403).json({ success: false, error: 'Only Owner can authorize and approve payouts.' });
+    }
+
+    const { id } = req.params;
+    const { status, reference_id, admin_notes } = req.body;
+
+    const withdrawal = db.withdrawals.find(w => w.id === id);
+    if (!withdrawal) return res.status(404).json({ success: false, error: 'Withdrawal request not found.' });
+
+    const nowStr = new Date().toISOString();
+    const previousStatus = withdrawal.status;
+
+    withdrawal.status = status;
+    if (reference_id) withdrawal.reference_id = reference_id;
+    if (admin_notes) withdrawal.admin_notes = admin_notes;
+    withdrawal.updated_at = nowStr;
+
+    if (status === 'PAID' && previousStatus !== 'PAID') {
+      withdrawal.processed_at = nowStr;
+      withdrawal.processed_by = user.id;
+
+      // Debit FZ Payment Bank Ledger
+      PaymentService.recordLedgerEntry({
+        source: 'WITHDRAWAL',
+        type: 'DEBIT',
+        amount: withdrawal.amount,
+        currency: withdrawal.currency,
+        status: 'DEBITED',
+        description: `Verified Payout Completed: ${withdrawal.method} (${withdrawal.id}) Ref: ${reference_id || 'N/A'}`,
+        metadata: { withdrawalId: withdrawal.id, referenceId: reference_id }
+      });
+    }
+
+    db.saveImmediately();
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'WITHDRAWAL_STATUS_UPDATED',
+      resourceType: 'WITHDRAWAL',
+      resourceId: id,
+      metadata: { status, amount: withdrawal.amount },
+      req
+    });
+
+    return res.json({ success: true, withdrawal });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Refunds Management
+apiRouter.get('/fz-bank/refunds', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isAdmin = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+  if (!isAdmin) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+  return res.json({ success: true, refunds: db.refunds || [] });
+});
+
+apiRouter.post('/fz-bank/refunds', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN' && user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, error: 'Unauthorized.' });
+    }
+
+    const { order_id, reason, amount } = req.body;
+    const order = db.orders.find(o => o.id === order_id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found.' });
+
+    const refundAmount = amount ? Number(amount) : order.total_amount;
+    const nowStr = new Date().toISOString();
+
+    const refund: RefundRecord = {
+      id: `ref-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      order_id: order.id,
+      payment_id: order.payment_id,
+      user_id: order.customer_id,
+      customer_name: order.customer_name,
+      amount: refundAmount,
+      currency: order.currency,
+      reason: reason || 'Customer requested refund',
+      status: 'PROCESSED',
+      created_at: nowStr,
+      processed_at: nowStr,
+      processed_by: user.id
+    };
+
+    order.status = 'REFUNDED';
+    order.updated_at = nowStr;
+
+    db.refunds.unshift(refund);
+
+    // Debit FZ Payment Bank Ledger
+    PaymentService.recordLedgerEntry({
+      source: 'REFUND',
+      type: 'DEBIT',
+      amount: refundAmount,
+      currency: order.currency,
+      order_id: order.id,
+      payment_id: order.payment_id,
+      status: 'DEBITED',
+      description: `Verified Refund Processed: ${order.product_name} (${order.id})`,
+      metadata: { reason }
+    });
+
+    db.saveImmediately();
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'REFUND_ISSUED',
+      resourceType: 'REFUND',
+      resourceId: refund.id,
+      metadata: { orderId: order.id, amount: refundAmount },
+      req
+    });
+
+    return res.json({ success: true, refund });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Manual Payment Review
+apiRouter.post('/fz-bank/manual-payment', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN' && user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, error: 'Unauthorized.' });
+    }
+
+    const { customer_name, user_id, amount, source, reference_id, description, action } = req.body;
+    const parsedAmount = Number(amount);
+
+    if (!parsedAmount || parsedAmount <= 0) {
+      return res.status(400).json({ success: false, error: 'Valid amount is required.' });
+    }
+
+    if (action === 'APPROVE') {
+      const entry = PaymentService.recordLedgerEntry({
+        source: source === 'SUBSCRIPTION' ? 'SUBSCRIPTION' : 'PRODUCT_KEY',
+        type: 'CREDIT',
+        amount: parsedAmount,
+        currency: 'INR',
+        transaction_id: reference_id || `MAN-${Date.now()}`,
+        user_id,
+        customer_name,
+        status: 'CREDITED',
+        description: description || `Manual Payment Approved: ${reference_id || 'Direct Bank/UPI Transfer'}`
+      });
+
+      return res.json({ success: true, message: 'Manual payment verified & credited to FZ Payment Bank.', entry });
+    } else {
+      return res.status(400).json({ success: false, error: 'Invalid manual payment action.' });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// KEY / PRODUCT PURCHASE & INVENTORY
+// ==========================================
+
+apiRouter.post('/products/:id/buy-key', authenticate, rateLimit({ max: 20, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { packageId, provider } = req.body;
+    const user = req.user!;
+
+    const result = PaymentService.createProductKeyOrder({
+      user,
+      productId: id,
+      packageId,
+      provider: provider || 'UPI'
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+apiRouter.post('/payments/verify-key-payment', authenticate, rateLimit({ max: 20, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { orderId, paymentId, transactionId, provider } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({ success: false, error: 'Order ID is required to verify key purchase.' });
+    }
+
+    const result = PaymentService.verifyProductKeyPayment({
+      orderId,
+      paymentId,
+      transactionId,
+      provider
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Product Keys Inventory Management
+apiRouter.get('/products/:id/keys', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+    const product = db.products.find(p => p.id === id);
+    if (!product || !assertOwnership(user, product.owner_id)) {
+      return res.status(404).json({ success: false, error: 'Product not found.' });
+    }
+
+    const keys = (db.product_keys || []).filter(k => k.product_id === id);
+    const availableCount = keys.filter(k => k.status === 'AVAILABLE').length;
+    const soldCount = keys.filter(k => k.status === 'SOLD').length;
+
+    return res.json({
+      success: true,
+      keys,
+      stats: { total: keys.length, available: availableCount, sold: soldCount }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+apiRouter.post('/products/:id/keys', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+    const { keys, packageId } = req.body;
+
+    const product = db.products.find(p => p.id === id);
+    if (!product || !assertOwnership(user, product.owner_id)) {
+      return res.status(404).json({ success: false, error: 'Product not found.' });
+    }
+
+    if (!keys) return res.status(400).json({ success: false, error: 'Keys list is required.' });
+
+    const keyList: string[] = Array.isArray(keys)
+      ? keys
+      : String(keys).split('\n').map(k => k.trim()).filter(Boolean);
+
+    const nowStr = new Date().toISOString();
+    let addedCount = 0;
+
+    for (const key of keyList) {
+      const exists = (db.product_keys || []).find(k => k.product_id === id && k.key === key);
+      if (!exists) {
+        db.product_keys.push({
+          id: `pk-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          product_id: id,
+          package_id: packageId,
+          key,
+          status: 'AVAILABLE',
+          created_at: nowStr
+        });
+        addedCount++;
+      }
+    }
+
+    product.stock_count = (db.product_keys || []).filter(k => k.product_id === id && k.status === 'AVAILABLE').length;
+    db.saveImmediately();
+
+    return res.json({ success: true, message: `Successfully added ${addedCount} license key(s).`, stockCount: product.stock_count });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// SUBSCRIPTIONS & CLIENT CHECKOUT
 // ==========================================
 
 apiRouter.get('/subscription/plans', async (_req: Request, res: Response) => {
-  const activePlans = db.subscription_plans.filter(p => p.status === 'ACTIVE');
+  const activePlans = (db.subscription_plans || []).filter(p => p.status === 'ACTIVE');
   return res.json({ success: true, plans: activePlans });
 });
 
@@ -913,15 +1507,15 @@ apiRouter.post('/subscription/create-order', authenticate, rateLimit({ max: 15, 
     const { planId, billingCycle, provider } = req.body;
     const user = req.user!;
 
-    if (!planId || !billingCycle) {
-      return res.status(400).json({ success: false, error: 'Plan ID and billing cycle (MONTHLY or YEARLY) are required.' });
+    if (!planId) {
+      return res.status(400).json({ success: false, error: 'Plan ID is required.' });
     }
 
     const result = PaymentService.createSubscriptionOrder({
       user,
       planId,
       billingCycle: billingCycle === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
-      provider: provider || 'SANDBOX'
+      provider: provider || 'UPI'
     });
 
     if (!result.success) {
@@ -936,7 +1530,7 @@ apiRouter.post('/subscription/create-order', authenticate, rateLimit({ max: 15, 
 
 apiRouter.post('/subscription/verify-payment', authenticate, rateLimit({ max: 20, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { paymentId, gatewayPaymentId, gatewayOrderId, signature, provider } = req.body;
+    const { paymentId, gatewayPaymentId, gatewayOrderId, signature, transactionId, provider } = req.body;
 
     if (!paymentId) {
       return res.status(400).json({ success: false, error: 'Payment ID is required.' });
@@ -944,10 +1538,11 @@ apiRouter.post('/subscription/verify-payment', authenticate, rateLimit({ max: 20
 
     const result = PaymentService.processPaymentVerification({
       paymentId,
-      gatewayPaymentId: gatewayPaymentId || `pay_verified_${Date.now()}`,
+      gatewayPaymentId,
       gatewayOrderId,
+      transactionId,
       signature,
-      provider: provider || 'SANDBOX'
+      provider: provider || 'UPI'
     });
 
     if (!result.success) {
@@ -964,6 +1559,217 @@ apiRouter.get('/subscription/payments-history', authenticate, async (req: Authen
   const user = req.user!;
   const payments = db.payments.filter(p => p.user_id === user.id);
   return res.json({ success: true, payments });
+});
+
+// Admin Subscription Plans Management (Monthly, Yearly, Custom)
+apiRouter.get('/admin/subscription/plans', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isAdmin = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+  if (!isAdmin) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+  return res.json({ success: true, plans: db.subscription_plans || [] });
+});
+
+apiRouter.post('/admin/subscription/plans', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
+      return res.status(403).json({ success: false, error: 'Only Owner can create subscription plans.' });
+    }
+
+    const { name, duration, duration_unit, price, currency, description, features, is_popular } = req.body;
+    if (!name || price === undefined) return res.status(400).json({ success: false, error: 'Plan name and price are required.' });
+
+    const nowStr = new Date().toISOString();
+    const newPlan: SubscriptionPlan = {
+      id: `plan-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      name: String(name).trim(),
+      duration: duration ? Number(duration) : 30,
+      duration_unit: duration_unit || 'DAYS',
+      price: Number(price),
+      price_monthly: Number(price),
+      price_yearly: Math.round(Number(price) * 10),
+      currency: currency || 'INR',
+      description: description || '',
+      features: Array.isArray(features) ? features : [String(features)],
+      max_bots: 10,
+      max_products: 100,
+      max_broadcasts_per_month: 25000,
+      status: 'ACTIVE',
+      active: true,
+      is_popular: !!is_popular,
+      created_at: nowStr,
+      updated_at: nowStr
+    };
+
+    db.subscription_plans.push(newPlan);
+    db.saveImmediately();
+    return res.json({ success: true, plan: newPlan });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+apiRouter.put('/admin/subscription/plans/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
+      return res.status(403).json({ success: false, error: 'Only Owner can edit subscription plans.' });
+    }
+
+    const { id } = req.params;
+    const plan = db.subscription_plans.find(p => p.id === id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found.' });
+
+    const { name, price, price_monthly, price_yearly, duration, duration_unit, description, features, status, is_popular } = req.body;
+
+    if (name !== undefined) plan.name = String(name).trim();
+    if (price !== undefined) {
+      plan.price = Number(price);
+      plan.price_monthly = Number(price);
+    }
+    if (price_monthly !== undefined) plan.price_monthly = Number(price_monthly);
+    if (price_yearly !== undefined) plan.price_yearly = Number(price_yearly);
+    if (duration !== undefined) plan.duration = Number(duration);
+    if (duration_unit !== undefined) plan.duration_unit = duration_unit;
+    if (description !== undefined) plan.description = description;
+    if (features !== undefined) plan.features = Array.isArray(features) ? features : [String(features)];
+    if (status !== undefined) plan.status = status;
+    if (is_popular !== undefined) plan.is_popular = !!is_popular;
+    plan.updated_at = new Date().toISOString();
+
+    db.saveImmediately();
+    return res.json({ success: true, plan });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+apiRouter.delete('/admin/subscription/plans/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
+      return res.status(403).json({ success: false, error: 'Only Owner can disable subscription plans.' });
+    }
+
+    const { id } = req.params;
+    const plan = db.subscription_plans.find(p => p.id === id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found.' });
+
+    plan.status = 'DISABLED';
+    plan.updated_at = new Date().toISOString();
+    db.saveImmediately();
+    return res.json({ success: true, message: 'Plan disabled.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Manual Subscription Grant (Owner/Admin)
+apiRouter.post('/admin/subscription/grant-manual', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN' && user.role !== 'ADMIN') {
+      return res.status(403).json({ success: false, error: 'Unauthorized.' });
+    }
+
+    const { targetUserId, planId, durationDays, notes } = req.body;
+    const targetUser = db.users.find(u => u.id === targetUserId || u.email === targetUserId || u.username === targetUserId);
+    if (!targetUser) return res.status(404).json({ success: false, error: 'Target user not found.' });
+
+    const plan = db.subscription_plans.find(p => p.id === planId) || db.subscription_plans[0];
+    const days = durationDays ? Number(durationDays) : 30;
+    const now = new Date();
+    const expiryDate = new Date(now.getTime() + days * 86400000).toISOString();
+
+    let sub = db.subscriptions.find(s => s.user_id === targetUser.id && s.status === 'ACTIVE');
+    if (sub) {
+      sub.plan_id = plan ? plan.id : sub.plan_id;
+      sub.expiry_date = expiryDate;
+      sub.updated_at = now.toISOString();
+    } else {
+      sub = {
+        id: `sub-grant-${Date.now()}`,
+        user_id: targetUser.id,
+        plan_id: plan ? plan.id : 'plan-monthly',
+        billing_cycle: 'MONTHLY',
+        amount: 0,
+        currency: 'INR',
+        status: 'ACTIVE',
+        start_date: now.toISOString(),
+        expiry_date: expiryDate,
+        auto_renew: false,
+        payment_id: `manual_grant_by_${user.id}`,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString()
+      };
+      db.subscriptions.unshift(sub);
+    }
+
+    db.notifications.unshift({
+      id: `notif-${Date.now()}`,
+      user_id: targetUser.id,
+      title: '💎 Premium Granted by Admin',
+      message: `You have been granted ${days} days of premium bot editor access.`,
+      type: 'SUCCESS',
+      is_read: false,
+      created_at: now.toISOString()
+    });
+
+    db.saveImmediately();
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'SUBSCRIPTION_MANUAL_GRANT',
+      resourceType: 'SUBSCRIPTION',
+      resourceId: targetUser.id,
+      metadata: { targetUser: targetUser.email, days, notes },
+      req
+    });
+
+    return res.json({ success: true, subscription: sub, message: `Granted ${days} days of premium to ${targetUser.email}` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Generic Webhook Ingress (Razorpay, Cashfree, PhonePe, UPI)
+apiRouter.post('/payments/webhook/:provider', async (req: Request, res: Response) => {
+  try {
+    const { provider } = req.params;
+    const body = req.body;
+
+    const orderId = body.order_id || body.payload?.payment?.entity?.order_id || body.data?.order?.order_id;
+    const paymentId = body.payment_id || body.payload?.payment?.entity?.id || body.data?.payment?.payment_id;
+    const transactionId = body.transaction_id || paymentId || `WH-TXN-${Date.now()}`;
+
+    if (!orderId && !paymentId) {
+      return res.status(200).json({ received: true, note: 'No recognizable order or payment ID found in payload' });
+    }
+
+    const order = db.orders.find(o => o.id === orderId || o.payment_id === paymentId);
+
+    if (order) {
+      if (order.order_type === 'PRODUCT_KEY') {
+        PaymentService.verifyProductKeyPayment({
+          orderId: order.id,
+          paymentId: order.payment_id,
+          transactionId: String(transactionId),
+          provider
+        });
+      } else if (order.order_type === 'SUBSCRIPTION') {
+        PaymentService.processPaymentVerification({
+          paymentId: order.payment_id || order.id,
+          gatewayPaymentId: String(paymentId),
+          transactionId: String(transactionId),
+          provider: provider.toUpperCase() as any
+        });
+      }
+    }
+
+    return res.json({ received: true, verified: true });
+  } catch (err: any) {
+    return res.status(200).json({ received: true, error: err.message });
+  }
 });
 
 // ==========================================

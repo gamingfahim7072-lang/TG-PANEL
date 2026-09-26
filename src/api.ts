@@ -193,7 +193,7 @@ class ApiClient {
   }
 
   public async createSubscriptionOrder(payload: { planId: string; billingCycle: 'MONTHLY' | 'YEARLY'; provider?: string }) {
-    return this.request<{ success: boolean; payment: any; gatewayConfig: any }>(`/subscription/create-order`, {
+    return this.request<{ success: boolean; payment: any; order?: any; gatewayConfig?: any; paymentUri?: string; qrImageUrl?: string; upiDetails?: any }>(`/subscription/create-order`, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
@@ -770,6 +770,178 @@ class ApiClient {
       `/hosting/restart-poller/${botId}`,
       { method: 'POST' }
     );
+  }
+
+  // ==========================================
+  // FZ PAYMENT BANK & FINANCIAL MANAGEMENT
+  // ==========================================
+
+  public async getFZBankStats() {
+    return this.request<{ success: boolean; stats: any }>(`/fz-bank/stats`);
+  }
+
+  public async getFZBankLedger(params?: { source?: string; status?: string; type?: string; search?: string }) {
+    const q = new URLSearchParams();
+    if (params?.source) q.set('source', params.source);
+    if (params?.status) q.set('status', params.status);
+    if (params?.type) q.set('type', params.type);
+    if (params?.search) q.set('search', params.search);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return this.request<{ success: boolean; transactions: any[] }>(`/fz-bank/ledger${qs}`);
+  }
+
+  public async getFZBankSettings() {
+    return this.request<{ success: boolean; settings: any }>(`/fz-bank/settings`);
+  }
+
+  public async updateFZBankSettings(settings: any) {
+    return this.request<{ success: boolean; settings: any }>(`/fz-bank/settings`, {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    });
+  }
+
+  public async getFZBankProviders() {
+    return this.request<{ success: boolean; providers: any[] }>(`/fz-bank/providers`);
+  }
+
+  public async updateFZBankProvider(id: string, payload: any) {
+    return this.request<{ success: boolean; provider: any }>(`/fz-bank/providers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async getFZBankUpi() {
+    return this.request<{ success: boolean; configs: any[] }>(`/fz-bank/upi`);
+  }
+
+  public async addFZBankUpi(payload: any) {
+    return this.request<{ success: boolean; config: any }>(`/fz-bank/upi`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async deleteFZBankUpi(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/fz-bank/upi/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  public async getFZBankWithdrawals() {
+    return this.request<{ success: boolean; withdrawals: any[] }>(`/fz-bank/withdrawals`);
+  }
+
+  public async createFZBankWithdrawal(payload: any) {
+    return this.request<{ success: boolean; withdrawal: any }>(`/fz-bank/withdrawals`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async updateFZBankWithdrawal(id: string, payload: any) {
+    return this.request<{ success: boolean; withdrawal: any }>(`/fz-bank/withdrawals/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async getFZBankRefunds() {
+    return this.request<{ success: boolean; refunds: any[] }>(`/fz-bank/refunds`);
+  }
+
+  public async createFZBankRefund(payload: any) {
+    return this.request<{ success: boolean; refund: any }>(`/fz-bank/refunds`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async submitFZBankManualPayment(payload: any) {
+    return this.request<{ success: boolean; message: string; entry: any }>(`/fz-bank/manual-payment`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  // ==========================================
+  // KEY PURCHASES & INVENTORY
+  // ==========================================
+
+  public async buyProductKey(productId: string, payload: { packageId?: string; provider?: string }) {
+    return this.request<{
+      success: boolean;
+      order: Order;
+      payment: any;
+      paymentUri?: string;
+      qrImageUrl?: string;
+      upiDetails?: any;
+    }>(`/products/${productId}/buy-key`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async verifyKeyPayment(payload: { orderId: string; paymentId?: string; transactionId?: string; provider?: string }) {
+    return this.request<{
+      success: boolean;
+      key: string;
+      order: Order;
+    }>(`/payments/verify-key-payment`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async getProductKeys(productId: string) {
+    return this.request<{
+      success: boolean;
+      keys: any[];
+      stats: { total: number; available: number; sold: number };
+    }>(`/products/${productId}/keys`);
+  }
+
+  public async addProductKeys(productId: string, payload: { keys: string[] | string; packageId?: string }) {
+    return this.request<{ success: boolean; message: string; stockCount: number }>(`/products/${productId}/keys`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  // ==========================================
+  // ADMIN SUBSCRIPTION MANAGEMENT
+  // ==========================================
+
+  public async getAdminSubscriptionPlans() {
+    return this.request<{ success: boolean; plans: SubscriptionPlan[] }>(`/admin/subscription/plans`);
+  }
+
+  public async createAdminSubscriptionPlan(payload: any) {
+    return this.request<{ success: boolean; plan: SubscriptionPlan }>(`/admin/subscription/plans`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async updateAdminSubscriptionPlan(id: string, payload: any) {
+    return this.request<{ success: boolean; plan: SubscriptionPlan }>(`/admin/subscription/plans/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async deleteAdminSubscriptionPlan(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/admin/subscription/plans/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  public async grantManualSubscription(payload: { targetUserId: string; planId?: string; durationDays?: number; notes?: string }) {
+    return this.request<{ success: boolean; subscription: Subscription; message: string }>(`/admin/subscription/grant-manual`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   }
 }
 

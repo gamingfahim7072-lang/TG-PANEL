@@ -16,15 +16,133 @@ export interface User {
 export interface SubscriptionPlan {
   id: string;
   name: string;
+  plan_id?: string;
+  duration?: number;
+  duration_unit?: 'DAYS' | 'MONTHS' | 'YEARS';
+  price?: number;
   price_monthly: number;
   price_yearly: number;
   currency: string;
+  description?: string;
   features: string[];
   max_bots: number;
   max_products: number;
   max_broadcasts_per_month: number;
-  status: 'ACTIVE' | 'ARCHIVED';
+  status: 'ACTIVE' | 'ARCHIVED' | 'DISABLED';
+  active?: boolean;
+  display_order?: number;
   is_popular?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PaymentBankSettings {
+  id: string;
+  display_name: string;
+  currency: string;
+  min_withdrawal: number;
+  max_withdrawal: number;
+  daily_withdrawal_limit: number;
+  auto_approval_threshold: number;
+  disclaimer: string;
+  updated_at: string;
+}
+
+export interface LedgerTransaction {
+  id: string;
+  source: 'PRODUCT_KEY' | 'SUBSCRIPTION' | 'WITHDRAWAL' | 'REFUND' | 'MANUAL_CREDIT' | 'ADJUSTMENT';
+  type: 'CREDIT' | 'DEBIT';
+  amount: number;
+  currency: string;
+  order_id?: string;
+  payment_id?: string;
+  transaction_id?: string;
+  user_id?: string;
+  user_email?: string;
+  customer_name?: string;
+  product_name?: string;
+  plan_name?: string;
+  status: 'CREDITED' | 'DEBITED' | 'PENDING' | 'REJECTED';
+  description: string;
+  metadata?: any;
+  created_at: string;
+}
+
+export interface ProductKey {
+  id: string;
+  product_id: string;
+  package_id?: string;
+  key: string;
+  status: 'AVAILABLE' | 'RESERVED' | 'SOLD' | 'DISABLED';
+  created_at: string;
+  reserved_at?: string;
+  sold_at?: string;
+  sold_to_user_id?: string;
+  order_id?: string;
+}
+
+export interface PaymentProviderConfig {
+  id: string;
+  provider: 'UPI' | 'RAZORPAY' | 'CASHFREE' | 'PHONEPE' | 'STRIPE' | 'SANDBOX';
+  name: string;
+  display_name: string;
+  is_enabled: boolean;
+  environment: 'TEST' | 'LIVE';
+  merchant_id?: string;
+  api_key?: string;
+  api_secret?: string;
+  webhook_secret?: string;
+  instructions?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  user_id: string;
+  user_email?: string;
+  user_name?: string;
+  amount: number;
+  currency: string;
+  method: 'UPI' | 'BANK_TRANSFER';
+  upi_id?: string;
+  bank_name?: string;
+  account_number?: string;
+  ifsc?: string;
+  status: 'PENDING' | 'PROCESSING' | 'PAID' | 'REJECTED' | 'CANCELLED';
+  reference_id?: string;
+  notes?: string;
+  admin_notes?: string;
+  created_at: string;
+  updated_at: string;
+  processed_at?: string;
+  processed_by?: string;
+}
+
+export interface RefundRecord {
+  id: string;
+  order_id: string;
+  payment_id?: string;
+  user_id?: string;
+  customer_name?: string;
+  amount: number;
+  currency: string;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PROCESSED';
+  created_at: string;
+  processed_at?: string;
+  processed_by?: string;
+}
+
+export interface UpiConfig {
+  id: string;
+  upi_id: string;
+  upi_name: string;
+  display_name: string;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Subscription {
@@ -392,6 +510,7 @@ export interface Order {
   customer_name: string;
   customer_telegram_id: string;
   product_id: string;
+  package_id?: string;
   product_name: string;
   quantity: number;
   unit_price: number;
@@ -400,6 +519,9 @@ export interface Order {
   status: 'PENDING' | 'PAID' | 'PROCESSING' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED' | 'UNDER_VERIFICATION';
   payment_provider: string;
   payment_id?: string;
+  order_type?: 'PRODUCT_KEY' | 'SUBSCRIPTION';
+  transaction_id?: string;
+  key_delivered?: string;
   delivered_type: 'LICENSE_KEY' | 'DIGITAL_FILE' | 'CUSTOM_MESSAGE' | 'SERIAL_KEY';
   delivered_content?: string;
   download_url?: string;
