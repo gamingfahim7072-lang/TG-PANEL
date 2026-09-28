@@ -12,7 +12,8 @@ import {
   Sparkles,
   Zap,
   RefreshCw,
-  Server
+  Server,
+  Wallet
 } from 'lucide-react';
 import { User, Subscription, TelegramBot, Notification } from '../types';
 import { api } from '../api';
@@ -147,6 +148,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="hidden sm:inline">Live Bot Tester</span>
           </button>
         )}
+
+        {/* FZ PAY Wallet Button */}
+        <button
+          onClick={() => onNavigate('fz-pay')}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all shadow-sm cursor-pointer"
+          title="Open FZ PAY Wallet"
+        >
+          <Wallet className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">FZ PAY</span>
+          <span className="font-mono text-emerald-300 text-[11px] font-bold">
+            ₹{(user.wallet_balance || 0).toLocaleString()}
+          </span>
+        </button>
 
         {/* Subscription Status Pill */}
         <div

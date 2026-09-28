@@ -85,37 +85,59 @@ export interface SubscriptionPlan {
   id: string;
   name: string;
   plan_id?: string;
-  duration?: number;
-  duration_unit?: 'DAYS' | 'MONTHS' | 'YEARS';
-  price?: number;
-  price_monthly: number;
-  price_yearly: number;
+  duration: number;
+  duration_unit: 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS';
+  price: number;
+  price_monthly?: number;
+  price_yearly?: number;
   currency: string;
   description?: string;
   features: string[];
-  max_bots: number;
-  max_products: number;
-  max_broadcasts_per_month: number;
-  status: 'ACTIVE' | 'ARCHIVED' | 'DISABLED';
+  max_bots?: number;
+  max_products?: number;
+  max_broadcasts_per_month?: number;
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'DISABLED';
   active?: boolean;
   display_order?: number;
   is_popular?: boolean;
+  subscriber_count?: number;
   created_at: string;
   updated_at?: string;
+}
+
+export interface SubscriptionSettings {
+  id: string;
+  is_enabled: boolean;
+  allow_monthly_plans: boolean;
+  allow_yearly_plans: boolean;
+  default_currency: string;
+  default_plan_id?: string;
+  require_payment: boolean;
+  grace_period_days: number;
+  auto_renewal_enabled: boolean;
+  customer_page_visible: boolean;
+  updated_at: string;
 }
 
 export interface Subscription {
   id: string;
   user_id: string;
+  user_email?: string;
+  user_name?: string;
   plan_id: string;
-  billing_cycle: 'MONTHLY' | 'YEARLY';
+  plan_name?: string;
+  billing_cycle: 'MONTHLY' | 'YEARLY' | 'CUSTOM';
   amount: number;
   currency: string;
-  status: 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'SUSPENDED';
+  status: 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'SUSPENDED' | 'MANUAL_GRANT';
   start_date: string;
   expiry_date: string;
   auto_renew: boolean;
   payment_id?: string;
+  order_id?: string;
+  is_manual?: boolean;
+  granted_by?: string;
+  notes?: string;
   created_at: string;
   updated_at: string;
 }
@@ -151,6 +173,38 @@ export interface PaymentBankSettings {
   auto_approval_threshold: number;
   disclaimer: string;
   updated_at: string;
+}
+
+export interface Wallet {
+  id: string; // e.g. "FZ-WAL-982104"
+  owner_user_id: string;
+  balance: number;
+  pending_balance: number;
+  currency: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+  total_received: number;
+  total_spent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WalletTransaction {
+  id: string; // e.g. "WTX-..."
+  wallet_id: string;
+  user_id: string;
+  type: 'DEPOSIT' | 'WITHDRAW' | 'SEND' | 'RECEIVE' | 'PREMIUM_PURCHASE' | 'BOT_PRODUCT_PURCHASE' | 'REFUND' | 'ADJUSTMENT';
+  amount: number;
+  currency: string;
+  balance_before: number;
+  balance_after: number;
+  reference_id?: string;
+  order_id?: string;
+  payment_id?: string;
+  description: string;
+  status: 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+  metadata?: any;
+  created_at: string;
+  completed_at?: string;
 }
 
 export interface LedgerTransaction {
@@ -818,6 +872,9 @@ export interface DatabaseSchema {
   payment_providers: PaymentProviderConfig[];
   withdrawals: WithdrawalRequest[];
   refunds: RefundRecord[];
+  subscription_settings?: SubscriptionSettings;
+  wallets: Wallet[];
+  wallet_transactions: WalletTransaction[];
 }
 
 export class Database {
@@ -863,12 +920,14 @@ export class Database {
       }
     }
 
-    // Ensure custom monthly & yearly subscription plans are present
-    if (!result.subscription_plans.some((p: any) => p.id === 'plan-monthly')) {
-      result.subscription_plans.unshift(
-        defaultData.subscription_plans.find(p => p.id === 'plan-monthly')!,
-        defaultData.subscription_plans.find(p => p.id === 'plan-yearly')!
-      );
+    // Ensure subscription plans present if empty
+    if (!result.subscription_plans || result.subscription_plans.length === 0) {
+      result.subscription_plans = defaultData.subscription_plans;
+    }
+
+    // Ensure subscription_settings present
+    if (!result.subscription_settings) {
+      result.subscription_settings = defaultData.subscription_settings;
     }
 
     // Ensure upi_configs present
@@ -898,6 +957,27 @@ export class Database {
     }
     if (!result.withdrawals) result.withdrawals = [];
     if (!result.refunds) result.refunds = [];
+    if (!result.wallets) result.wallets = [];
+    if (!result.wallet_transactions) result.wallet_transactions = [];
+
+    // Ensure every existing user has an initialized FZ PAY wallet
+    for (const u of result.users || []) {
+      const existingWal = result.wallets.find((w: any) => w.owner_user_id === u.id);
+      if (!existingWal) {
+        result.wallets.push({
+          id: `FZ-WAL-${u.id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase() || Math.floor(100000 + Math.random() * 900000)}`,
+          owner_user_id: u.id,
+          balance: u.wallet_balance !== undefined ? u.wallet_balance : 0,
+          pending_balance: 0,
+          currency: 'INR',
+          status: 'ACTIVE',
+          total_received: u.total_deposited || u.wallet_balance || 0,
+          total_spent: u.total_spent || 0,
+          created_at: u.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
 
     return result;
   }
@@ -1186,7 +1266,21 @@ export class Database {
         }
       ],
       withdrawals: [],
-      refunds: []
+      refunds: [],
+      wallets: [],
+      wallet_transactions: [],
+      subscription_settings: {
+        id: 'sub-settings-01',
+        is_enabled: true,
+        allow_monthly_plans: true,
+        allow_yearly_plans: true,
+        default_currency: 'INR',
+        require_payment: true,
+        grace_period_days: 3,
+        auto_renewal_enabled: false,
+        customer_page_visible: true,
+        updated_at: now
+      }
     };
   }
 
@@ -1319,6 +1413,28 @@ export class Database {
   public set withdrawals(val: WithdrawalRequest[]) { this.data.withdrawals = val; }
   public get refunds(): RefundRecord[] { return this.data.refunds || []; }
   public set refunds(val: RefundRecord[]) { this.data.refunds = val; }
+  public get subscription_settings(): SubscriptionSettings {
+    if (!this.data.subscription_settings) {
+      this.data.subscription_settings = {
+        id: 'sub-settings-01',
+        is_enabled: true,
+        allow_monthly_plans: true,
+        allow_yearly_plans: true,
+        default_currency: 'INR',
+        require_payment: true,
+        grace_period_days: 3,
+        auto_renewal_enabled: false,
+        customer_page_visible: true,
+        updated_at: new Date().toISOString()
+      };
+    }
+    return this.data.subscription_settings;
+  }
+  public set subscription_settings(val: SubscriptionSettings) { this.data.subscription_settings = val; }
+  public get wallets(): Wallet[] { return this.data.wallets || []; }
+  public set wallets(val: Wallet[]) { this.data.wallets = val; }
+  public get wallet_transactions(): WalletTransaction[] { return this.data.wallet_transactions || []; }
+  public set wallet_transactions(val: WalletTransaction[]) { this.data.wallet_transactions = val; }
 }
 
 export const db = new Database();

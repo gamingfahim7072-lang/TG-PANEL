@@ -1,9 +1,29 @@
 {
   "users": [
     {
+      "id": "usr-owner-01",
+      "email": "owner@telesell.io",
+      "username": "fz_owner",
+      "password_hash": "$2b$10$Jmc5YdRu/3umWEAi46QKj.d6r4XJAK3mywZLp6Aru6Bn0uOvHW74W",
+      "role": "OWNER",
+      "full_name": "FZ System Owner",
+      "telegram_username": "fz_owner",
+      "is_email_verified": true,
+      "two_factor_enabled": false,
+      "referral_code": "FZOWNER1",
+      "reseller_status": "APPROVED",
+      "reseller_commission_rate": 30,
+      "reseller_balance": 50000,
+      "wallet_balance": 10000,
+      "total_deposited": 10000,
+      "total_spent": 0,
+      "created_at": "2026-09-27T18:02:00.646Z",
+      "updated_at": "2026-09-27T18:02:00.646Z"
+    },
+    {
       "id": "usr-admin-01",
       "email": "admin@telesell.io",
-      "password_hash": "$2b$10$SkD9H.OeE7IfeBAuyGd34epEpZjpXXEw4BGOJvUpSccTqpT91K19y",
+      "password_hash": "$2b$10$K2DiLNC45sWG6X3VbuMSuO3kDaHfD7hUzsLoTn3nsHHf/d7wpR2HW",
       "role": "SUPER ADMIN",
       "full_name": "Platform Super Admin",
       "is_email_verified": true,
@@ -13,7 +33,11 @@
       "reseller_commission_rate": 25,
       "reseller_balance": 12500,
       "created_at": "2026-09-25T01:07:35.211Z",
-      "updated_at": "2026-09-25T01:07:35.211Z"
+      "updated_at": "2026-09-27T18:20:38.395Z",
+      "username": "fz_master_admin",
+      "wallet_balance": 5500,
+      "total_deposited": 5500,
+      "total_spent": 0
     },
     {
       "id": "usr-merchant-02",
@@ -28,7 +52,11 @@
       "reseller_commission_rate": 15,
       "reseller_balance": 0,
       "created_at": "2026-09-25T01:07:35.211Z",
-      "updated_at": "2026-09-25T01:07:35.211Z"
+      "updated_at": "2026-09-25T01:07:35.211Z",
+      "username": "merchant",
+      "wallet_balance": 750,
+      "total_deposited": 750,
+      "total_spent": 0
     },
     {
       "id": "usr-reseller-03",
@@ -43,13 +71,17 @@
       "reseller_commission_rate": 20,
       "reseller_balance": 4800,
       "created_at": "2026-09-25T01:07:35.211Z",
-      "updated_at": "2026-09-25T01:07:35.211Z"
+      "updated_at": "2026-09-25T01:07:35.211Z",
+      "username": "reseller",
+      "wallet_balance": 2500,
+      "total_deposited": 2500,
+      "total_spent": 0
     },
     {
       "id": "usr-1790298928293-wmk8en",
       "email": "gamingfahim7072@gmail.com",
       "password_hash": "$2b$10$Nt/LaIhzaJx9Ug3ADoQwb.J1mOnkMThA2ZR2kkuokUU2HzC8ZDcHG",
-      "role": "CUSTOMER",
+      "role": "OWNER",
       "full_name": "Muhammad Fahim",
       "is_email_verified": true,
       "two_factor_enabled": false,
@@ -58,7 +90,31 @@
       "reseller_commission_rate": 15,
       "reseller_balance": 0,
       "created_at": "2026-09-25T01:15:28.293Z",
-      "updated_at": "2026-09-25T01:15:28.293Z"
+      "updated_at": "2026-09-27T18:20:06.145Z",
+      "username": "gamingfahim7072",
+      "wallet_balance": 2500,
+      "total_deposited": 2500,
+      "total_spent": 0
+    },
+    {
+      "id": "usr-standard-02",
+      "email": "user@telesell.io",
+      "username": "fz_user",
+      "password_hash": "$2b$10$S0FysMi2JmI3hxQ.a9r9s.GQisrIjtnU9UvtGYO7bmNekwEN9egW2",
+      "role": "USER",
+      "full_name": "FZ Client User",
+      "telegram_username": "fz_client",
+      "is_email_verified": true,
+      "two_factor_enabled": false,
+      "referral_code": "FZUSER77",
+      "reseller_status": "NONE",
+      "reseller_commission_rate": 15,
+      "reseller_balance": 0,
+      "wallet_balance": 1500,
+      "total_deposited": 1500,
+      "total_spent": 350,
+      "created_at": "2026-09-27T18:02:00.646Z",
+      "updated_at": "2026-09-27T18:02:00.646Z"
     }
   ],
   "sessions": [],
@@ -161,7 +217,28 @@
       "updated_at": "2026-09-25T01:15:28.293Z"
     }
   ],
-  "payments": [],
+  "payments": [
+    {
+      "id": "pay-dep-1790533232709-95gwn8",
+      "order_id": "FZ-DEP-1790533232709-4104",
+      "user_id": "usr-admin-01",
+      "amount": 500,
+      "currency": "INR",
+      "provider": "MANUAL",
+      "status": "SUCCESS",
+      "order_type": "PRODUCT_KEY",
+      "metadata": {
+        "wallet_id": "FZ-WAL-DMIN01",
+        "user_email": "admin@telesell.io",
+        "type": "WALLET_DEPOSIT",
+        "description": "Add money to FZ PAY Wallet (FZ-WAL-DMIN01)"
+      },
+      "created_at": "2026-09-27T18:20:32.709Z",
+      "updated_at": "2026-09-27T18:20:38.395Z",
+      "transaction_id": "TXN-DEP-1790533238395-8585",
+      "verified_at": "2026-09-27T18:20:38.395Z"
+    }
+  ],
   "payment_events": [],
   "telegram_bots": [
     {
@@ -2474,6 +2551,71 @@
   "notifications": [],
   "audit_logs": [
     {
+      "id": "audit-1790533223142-cn9s7a",
+      "user_id": "usr-admin-01",
+      "user_email": "admin@telesell.io",
+      "action": "ADMIN_PORTAL_LOGIN",
+      "resource_type": "SESSION",
+      "resource_id": "usr-admin-01",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/7.88.1",
+      "created_at": "2026-09-27T18:20:23.142Z"
+    },
+    {
+      "id": "audit-1790533219248-4fn9ku",
+      "user_id": "usr-admin-01",
+      "user_email": "admin@telesell.io",
+      "action": "USER_LOGIN",
+      "resource_type": "SESSION",
+      "resource_id": "usr-admin-01",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/7.88.1",
+      "created_at": "2026-09-27T18:20:19.248Z"
+    },
+    {
+      "id": "audit-1790532143874-yfbbsb",
+      "user_id": "usr-admin-01",
+      "user_email": "admin@telesell.io",
+      "action": "ADMIN_CREDENTIALS_UPDATED",
+      "resource_type": "SECURITY",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/7.88.1",
+      "created_at": "2026-09-27T18:02:23.874Z"
+    },
+    {
+      "id": "audit-1790532143752-htwkb8",
+      "user_id": "usr-admin-01",
+      "user_email": "admin@telesell.io",
+      "action": "ADMIN_PORTAL_LOGIN",
+      "resource_type": "SESSION",
+      "resource_id": "usr-admin-01",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/7.88.1",
+      "created_at": "2026-09-27T18:02:23.752Z"
+    },
+    {
+      "id": "audit-1790532138387-os5y7g",
+      "user_id": "usr-owner-01",
+      "user_email": "owner@telesell.io",
+      "action": "ADMIN_PORTAL_LOGIN",
+      "resource_type": "SESSION",
+      "resource_id": "usr-owner-01",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/7.88.1",
+      "created_at": "2026-09-27T18:02:18.387Z"
+    },
+    {
+      "id": "audit-1790532133800-tzmuc0",
+      "user_id": "usr-admin-01",
+      "user_email": "admin@telesell.io",
+      "action": "ADMIN_PORTAL_LOGIN",
+      "resource_type": "SESSION",
+      "resource_id": "usr-admin-01",
+      "ip_address": "127.0.0.1",
+      "user_agent": "curl/7.88.1",
+      "created_at": "2026-09-27T18:02:13.800Z"
+    },
+    {
       "id": "audit-1790302449217-d4h07h",
       "user_id": "usr-1790298928293-wmk8en",
       "action": "PRODUCT_CREATED",
@@ -2840,5 +2982,368 @@
       "description": "Delay between broadcast messages in milliseconds",
       "updated_at": "2026-09-25T01:07:35.090Z"
     }
-  ]
+  ],
+  "admin_permissions": [
+    {
+      "id": "perm-usr-admin-01",
+      "admin_user_id": "usr-admin-01",
+      "permissions": [
+        "users.view",
+        "users.edit",
+        "payments.view",
+        "payments.verify",
+        "products.view",
+        "products.create",
+        "products.edit",
+        "telegram.view",
+        "telegram.connect",
+        "apk.view",
+        "apk.upload",
+        "broadcast.send",
+        "settings.view",
+        "app.update",
+        "security.logs"
+      ],
+      "updated_by": "usr-owner-01",
+      "created_at": "2026-09-27T18:02:00.646Z",
+      "updated_at": "2026-09-27T18:02:00.646Z"
+    }
+  ],
+  "balance_transactions": [
+    {
+      "id": "tx-seed-01",
+      "user_id": "usr-standard-02",
+      "user_email": "user@telesell.io",
+      "type": "CREDIT",
+      "amount": 1500,
+      "previous_balance": 0,
+      "new_balance": 1500,
+      "reason": "Initial Wallet Welcome Deposit (UPI)",
+      "payment_id": "pay-seed-upi-01",
+      "created_at": "2026-09-27T18:02:00.646Z"
+    }
+  ],
+  "apk_files": [
+    {
+      "id": "apk-fz-engine-v2",
+      "owner_id": "usr-admin-01",
+      "app_name": "FZ SHOT ENGINE",
+      "version": "2.0.0",
+      "version_code": 20,
+      "file_name": "FZ_Shot_Engine_v2.0.0.apk",
+      "stored_file_path": "data/uploads/FZ_Shot_Engine_v2.0.0.apk",
+      "download_url": "/api/apk/apk-fz-engine-v2/download",
+      "file_size": 28456120,
+      "release_notes": "• Complete new UI overhaul\n• Ultra fast response pipeline\n• Instant UPI payment system\n• Major stability & security enhancements",
+      "is_active": true,
+      "download_count": 1420,
+      "created_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    }
+  ],
+  "app_releases": [
+    {
+      "id": "rel-200",
+      "owner_id": "usr-admin-01",
+      "app_name": "FZ SHOT ENGINE",
+      "version_name": "2.0.0",
+      "version_code": 20,
+      "apk_file_id": "apk-fz-engine-v2",
+      "apk_url": "/api/apk/apk-fz-engine-v2/download",
+      "release_notes": "• Complete new UI overhaul\n• Ultra fast response pipeline\n• Instant UPI payment system\n• Major stability & security enhancements",
+      "minimum_version_code": 18,
+      "force_update": false,
+      "release_date": "2026-09-27T18:02:00.530Z",
+      "status": "PUBLISHED",
+      "download_count": 1420,
+      "created_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    },
+    {
+      "id": "rel-190",
+      "owner_id": "usr-admin-01",
+      "app_name": "FZ SHOT ENGINE",
+      "version_name": "1.9.0",
+      "version_code": 19,
+      "apk_file_id": "apk-fz-engine-v2",
+      "apk_url": "/api/apk/apk-fz-engine-v2/download",
+      "release_notes": "• Previous stable release with high compatibility",
+      "minimum_version_code": 15,
+      "force_update": false,
+      "release_date": "2026-09-12T18:02:00.530Z",
+      "status": "ARCHIVED",
+      "download_count": 4210,
+      "created_at": "2026-09-12T18:02:00.530Z",
+      "updated_at": "2026-09-12T18:02:00.530Z"
+    }
+  ],
+  "app_configs": [
+    {
+      "id": "app-cfg-primary",
+      "owner_id": "usr-admin-01",
+      "app_name": "FZ SHOT ENGINE",
+      "package_name": "com.fz.shotengine",
+      "logo_url": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=250&q=80",
+      "support_url": "https://t.me/fz_support",
+      "telegram_channel": "https://t.me/fz_official",
+      "support_username": "fz_support",
+      "payment_upi": "merchant@upi",
+      "maintenance_mode": false,
+      "announcement": "Welcome to FZ Shot Engine v2.0! Instant digital licenses now live.",
+      "minimum_version_code": 18,
+      "latest_version_code": 20,
+      "latest_version_name": "2.0.0",
+      "download_url": "/api/apk/apk-fz-engine-v2/download",
+      "force_update": false,
+      "feature_flags": {
+        "enable_instant_checkout": true,
+        "enable_telegram_sync": true,
+        "enable_sandbox_mode": true,
+        "enable_biometric_login": true
+      },
+      "github_repo": "FZ-Panel/android-engine",
+      "github_branch": "main",
+      "github_workflow": "build-release-apk.yml",
+      "ci_build_status": "SUCCESS",
+      "last_build_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    }
+  ],
+  "otp_records": [
+    {
+      "id": "otp-1790532149934-l95hrf",
+      "identifier": "admin@telesell.io",
+      "code_hash": "$2b$10$Z0bQXX.7cv0/qkTTVPRUc.UGEij1oJCe5nyhopU5nCJGYfrZZpoua",
+      "purpose": "RESET_PASSWORD",
+      "channel": "EMAIL",
+      "attempts": 0,
+      "max_attempts": 5,
+      "expires_at": "2026-09-27T18:07:29.824Z",
+      "resend_after": "2026-09-27T18:03:29.824Z",
+      "verified": false,
+      "ip_address": "127.0.0.1",
+      "created_at": "2026-09-27T18:02:29.824Z"
+    }
+  ],
+  "upi_configs": [
+    {
+      "id": "upi-primary",
+      "upi_id": "fzpanel@upi",
+      "upi_name": "FZ System Merchant",
+      "display_name": "Primary Official UPI QR",
+      "is_default": true,
+      "is_active": true,
+      "created_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    }
+  ],
+  "payment_bank_settings": {
+    "id": "fz-bank-settings",
+    "display_name": "FZ PAYMENT BANK",
+    "currency": "INR",
+    "min_withdrawal": 500,
+    "max_withdrawal": 100000,
+    "daily_withdrawal_limit": 250000,
+    "auto_approval_threshold": 5000,
+    "disclaimer": "FZ PAYMENT BANK is an internal verified financial ledger & payment management system. Real funds are processed and held securely by official payment gateways, banking partners, and UPI rails.",
+    "updated_at": "2026-09-27T18:20:06.038Z"
+  },
+  "ledger_transactions": [
+    {
+      "id": "ledg-1790533238395-uzokcl",
+      "source": "MANUAL_CREDIT",
+      "type": "CREDIT",
+      "amount": 500,
+      "currency": "INR",
+      "order_id": "FZ-DEP-1790533232709-4104",
+      "payment_id": "pay-dep-1790533232709-95gwn8",
+      "transaction_id": "TXN-DEP-1790533238395-8585",
+      "user_id": "usr-admin-01",
+      "user_email": "admin@telesell.io",
+      "customer_name": "Platform Super Admin",
+      "status": "CREDITED",
+      "description": "FZ PAY Wallet Top-up: FZ-WAL-DMIN01",
+      "created_at": "2026-09-27T18:20:38.395Z"
+    }
+  ],
+  "product_keys": [],
+  "payment_providers": [
+    {
+      "id": "prov-upi",
+      "provider": "UPI",
+      "name": "Direct UPI & Dynamic QR",
+      "display_name": "Official UPI / QR Rails",
+      "is_enabled": true,
+      "environment": "LIVE",
+      "instructions": "Pay directly via PhonePe, Google Pay, Paytm, or any BHIM UPI application using real-time dynamic QR codes.",
+      "created_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    },
+    {
+      "id": "prov-razorpay",
+      "provider": "RAZORPAY",
+      "name": "Razorpay Payment Gateway",
+      "display_name": "Cards / NetBanking / UPI Gateway",
+      "is_enabled": false,
+      "environment": "TEST",
+      "merchant_id": "",
+      "api_key": "",
+      "api_secret": "",
+      "webhook_secret": "",
+      "instructions": "Instant card, netbanking, and UPI gateway collection with real-time webhooks.",
+      "created_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    },
+    {
+      "id": "prov-cashfree",
+      "provider": "CASHFREE",
+      "name": "Cashfree Payments",
+      "display_name": "Cashfree PG & Auto Payouts",
+      "is_enabled": false,
+      "environment": "TEST",
+      "merchant_id": "",
+      "api_key": "",
+      "api_secret": "",
+      "webhook_secret": "",
+      "instructions": "Seamless domestic and international payment gateway integration.",
+      "created_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    },
+    {
+      "id": "prov-phonepe",
+      "provider": "PHONEPE",
+      "name": "PhonePe PG",
+      "display_name": "PhonePe Payment Gateway",
+      "is_enabled": false,
+      "environment": "TEST",
+      "merchant_id": "",
+      "api_key": "",
+      "api_secret": "",
+      "webhook_secret": "",
+      "instructions": "Official PhonePe Merchant Payment Gateway with webhook callback verification.",
+      "created_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    },
+    {
+      "id": "prov-sandbox",
+      "provider": "SANDBOX",
+      "name": "Simulator / Sandbox Rail",
+      "display_name": "Instant Test Sandbox",
+      "is_enabled": true,
+      "environment": "TEST",
+      "instructions": "Automated test suite simulation rail for immediate sandbox flow verification.",
+      "created_at": "2026-09-27T18:02:00.530Z",
+      "updated_at": "2026-09-27T18:02:00.530Z"
+    }
+  ],
+  "withdrawals": [],
+  "refunds": [],
+  "wallets": [
+    {
+      "id": "FZ-WAL-WNER01",
+      "owner_user_id": "usr-owner-01",
+      "balance": 10000,
+      "pending_balance": 0,
+      "currency": "INR",
+      "status": "ACTIVE",
+      "total_received": 10000,
+      "total_spent": 0,
+      "created_at": "2026-09-27T18:02:00.646Z",
+      "updated_at": "2026-09-27T18:20:06.039Z"
+    },
+    {
+      "id": "FZ-WAL-DMIN01",
+      "owner_user_id": "usr-admin-01",
+      "balance": 5500,
+      "pending_balance": 0,
+      "currency": "INR",
+      "status": "ACTIVE",
+      "total_received": 5500,
+      "total_spent": 0,
+      "created_at": "2026-09-25T01:07:35.211Z",
+      "updated_at": "2026-09-27T18:20:38.395Z"
+    },
+    {
+      "id": "FZ-WAL-HANT02",
+      "owner_user_id": "usr-merchant-02",
+      "balance": 750,
+      "pending_balance": 0,
+      "currency": "INR",
+      "status": "ACTIVE",
+      "total_received": 750,
+      "total_spent": 0,
+      "created_at": "2026-09-25T01:07:35.211Z",
+      "updated_at": "2026-09-27T18:20:06.039Z"
+    },
+    {
+      "id": "FZ-WAL-LLER03",
+      "owner_user_id": "usr-reseller-03",
+      "balance": 2500,
+      "pending_balance": 0,
+      "currency": "INR",
+      "status": "ACTIVE",
+      "total_received": 2500,
+      "total_spent": 0,
+      "created_at": "2026-09-25T01:07:35.211Z",
+      "updated_at": "2026-09-27T18:20:06.039Z"
+    },
+    {
+      "id": "FZ-WAL-WMK8EN",
+      "owner_user_id": "usr-1790298928293-wmk8en",
+      "balance": 2500,
+      "pending_balance": 0,
+      "currency": "INR",
+      "status": "ACTIVE",
+      "total_received": 2500,
+      "total_spent": 0,
+      "created_at": "2026-09-25T01:15:28.293Z",
+      "updated_at": "2026-09-27T18:20:06.039Z"
+    },
+    {
+      "id": "FZ-WAL-DARD02",
+      "owner_user_id": "usr-standard-02",
+      "balance": 1500,
+      "pending_balance": 0,
+      "currency": "INR",
+      "status": "ACTIVE",
+      "total_received": 1500,
+      "total_spent": 350,
+      "created_at": "2026-09-27T18:02:00.646Z",
+      "updated_at": "2026-09-27T18:20:06.039Z"
+    }
+  ],
+  "wallet_transactions": [
+    {
+      "id": "WTX-DEP-1790533232709-kuz9f",
+      "wallet_id": "FZ-WAL-DMIN01",
+      "user_id": "usr-admin-01",
+      "type": "DEPOSIT",
+      "amount": 500,
+      "currency": "INR",
+      "balance_before": 5000,
+      "balance_after": 5500,
+      "order_id": "FZ-DEP-1790533232709-4104",
+      "payment_id": "pay-dep-1790533232709-95gwn8",
+      "description": "Pending wallet deposit of ₹500",
+      "status": "SUCCESS",
+      "metadata": {
+        "provider": "UPI"
+      },
+      "created_at": "2026-09-27T18:20:32.709Z",
+      "reference_id": "TXN-DEP-1790533238395-8585",
+      "completed_at": "2026-09-27T18:20:38.395Z"
+    }
+  ],
+  "subscription_settings": {
+    "id": "sub-settings-01",
+    "is_enabled": true,
+    "allow_monthly_plans": true,
+    "allow_yearly_plans": true,
+    "default_currency": "INR",
+    "require_payment": true,
+    "grace_period_days": 3,
+    "auto_renewal_enabled": false,
+    "customer_page_visible": true,
+    "updated_at": "2026-09-27T18:20:06.038Z"
+  }
 }

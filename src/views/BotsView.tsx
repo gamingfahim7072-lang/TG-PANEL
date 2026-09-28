@@ -19,7 +19,8 @@ import {
   X,
   ShieldCheck,
   Send,
-  MessageSquare
+  MessageSquare,
+  Wallet
 } from 'lucide-react';
 import { TelegramBot, TelegramBotStatusResponse } from '../types';
 import { api } from '../api';
@@ -32,6 +33,7 @@ interface BotsViewProps {
   onOpenLiveSimulator: () => void;
   onNavigateToEditor: (botId: string) => void;
   onRefreshBots: () => void;
+  onNavigate?: (view: string) => void;
 }
 
 export const BotsView: React.FC<BotsViewProps> = ({
@@ -41,7 +43,8 @@ export const BotsView: React.FC<BotsViewProps> = ({
   onOpenConnectBot,
   onOpenLiveSimulator,
   onNavigateToEditor,
-  onRefreshBots
+  onRefreshBots,
+  onNavigate
 }) => {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; msg: string; success: boolean } | null>(null);
@@ -167,13 +170,22 @@ export const BotsView: React.FC<BotsViewProps> = ({
             Real Telegram bots running 24/7 with instant automated delivery, UPI payments, and interactive commands.
           </p>
         </div>
-        <button
-          onClick={onOpenConnectBot}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition-all shadow-lg shadow-cyan-500/20 flex items-center space-x-2 shrink-0 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Connect New Telegram Bot</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => onNavigate ? onNavigate('fz-pay') : window.location.assign('/fz-pay')}
+            className="px-4 py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-xs transition-all shadow-sm flex items-center space-x-1.5 cursor-pointer"
+          >
+            <Wallet className="w-4 h-4" />
+            <span>💰 FZ PAY Wallet</span>
+          </button>
+          <button
+            onClick={onOpenConnectBot}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition-all shadow-lg shadow-cyan-500/20 flex items-center space-x-2 shrink-0 self-start sm:self-auto cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Connect New Telegram Bot</span>
+          </button>
+        </div>
       </div>
 
       {/* Bots Grid */}

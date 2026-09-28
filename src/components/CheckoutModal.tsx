@@ -12,9 +12,11 @@ import {
   ExternalLink,
   Copy,
   Sliders,
-  FileText
+  FileText,
+  Wallet,
+  Plus
 } from 'lucide-react';
-import { SubscriptionPlan, Subscription } from '../types';
+import { SubscriptionPlan, Subscription, Wallet as WalletType } from '../types';
 import { api } from '../api';
 
 interface CheckoutModalProps {
@@ -23,6 +25,7 @@ interface CheckoutModalProps {
   onSubscriptionUpdated: (newSub: Subscription) => void;
   onNavigateToEditor?: () => void;
   onNavigateToBilling?: () => void;
+  onNavigate?: (view: string) => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -30,15 +33,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onClose,
   onSubscriptionUpdated,
   onNavigateToEditor,
-  onNavigateToBilling
+  onNavigateToBilling,
+  onNavigate
 }) => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
   const [selectedPlanId, setSelectedPlanId] = useState<string>('plan-monthly');
-  const [provider, setProvider] = useState<'UPI' | 'RAZORPAY' | 'CASHFREE' | 'PHONEPE'>('UPI');
+  const [provider, setProvider] = useState<'FZ_PAY' | 'UPI' | 'RAZORPAY' | 'CASHFREE' | 'PHONEPE'>('FZ_PAY');
+  const [wallet, setWallet] = useState<WalletType | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [insufficientBalance, setInsufficientBalance] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState<any>(null);
   const [verifiedSub, setVerifiedSub] = useState<Subscription | null>(null);
   const [copiedUpi, setCopiedUpi] = useState(false);
@@ -46,7 +53,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadPlans();
+      loadWallet();
       setError(null);
+      setInsufficientBalance(false);
       setPaymentOrder(null);
       setVerifiedSub(null);
     }
@@ -59,15 +68,64 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const res = await api.getPlans();
       if (res.plans && res.plans.length > 0) {
         setPlans(res.plans);
-        const monthly = res.plans.find(p => p.id === 'plan-monthly') || res.plans[0];
-        setSelectedPlanId(monthly.id);
+        setSelectedPlanId(res.plans[0].id);
       }
     } catch {}
   };
 
+  const loadWallet = async () => {
+    setWalletLoading(true);
+    try {
+      const res = await api.getWalletDashboard();
+      if (res.wallet) {
+        setWallet(res.wallet);
+      }
+    } catch {}
+    finally {
+      setWalletLoading(false);
+    }
+  };
+
   const selectedPlan = plans.find(p => p.id === selectedPlanId) || plans[0];
+  const getCurrencySymbol = (curr?: string) => curr === 'USD' ? '$' : curr === 'EUR' ? '€' : curr === 'GBP' ? '£' : '₹';
+  const planPrice = selectedPlan
+    ? (billingCycle === 'YEARLY' ? selectedPlan.price_yearly : selectedPlan.price_monthly) || selectedPlan.price || 299
+    : 299;
+
+  const handlePayWithWallet = async () => {
+    setLoading(true);
+    setError(null);
+    setInsufficientBalance(false);
+    try {
+      const res = await api.paySubscriptionWithWallet({
+        planId: selectedPlanId,
+        billingCycle
+      });
+
+      if (res.success && res.subscription) {
+        setVerifiedSub(res.subscription);
+        if (res.wallet) setWallet(res.wallet);
+        onSubscriptionUpdated(res.subscription);
+      } else {
+        if (res.code === 'INSUFFICIENT_BALANCE') {
+          setInsufficientBalance(true);
+        }
+        throw new Error(res.error || 'Wallet payment was not confirmed.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Payment failed.');
+      if (err.message && err.message.toLowerCase().includes('insufficient')) {
+        setInsufficientBalance(true);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleInitiateOrder = async () => {
+    if (provider === 'FZ_PAY') {
+      return handlePayWithWallet();
+    }
     setLoading(true);
     setError(null);
     try {
@@ -340,7 +398,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {plans.map(plan => {
                   const isSelected = selectedPlanId === plan.id;
-                  const price = billingCycle === 'YEARLY' ? plan.price_yearly : plan.price_monthly;
+                  const price = plan.price !== undefined
+                    ? plan.price
+                    : (billingCycle === 'YEARLY' ? plan.price_yearly : plan.price_monthly) || 299;
 
                   return (
                     <div
@@ -348,12 +408,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       onClick={() => setSelectedPlanId(plan.id)}
                       className={`relative p-5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
                         isSelected
-                          ? 'bg-cyan-950/20 border-cyan-500 shadow-xl shadow-cyan-500/10 ring-1 ring-cyan-500'
+                          ? 'bg-amber-950/20 border-amber-500 shadow-xl shadow-amber-500/10 ring-1 ring-amber-500'
                           : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
                       }`}
                     >
                       {plan.is_popular && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-black text-[9px] tracking-wider uppercase shadow-md">
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-[9px] tracking-wider uppercase shadow-md">
                           RECOMMENDED
                         </div>
                       )}
@@ -361,13 +421,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-sm font-bold text-white">{plan.name}</h3>
-                          {isSelected && <Check className="w-4 h-4 text-cyan-400" />}
+                          {isSelected && <Check className="w-4 h-4 text-amber-400" />}
                         </div>
 
-                        <div className="mb-4">
-                          <span className="text-3xl font-black text-white">₹{price}</span>
+                        <div className="mb-4 flex items-baseline gap-1">
+                          <span className="text-3xl font-black text-white font-mono">
+                            {getCurrencySymbol(plan.currency)}{price}
+                          </span>
                           <span className="text-xs text-slate-400 font-medium">
-                            /{billingCycle === 'MONTHLY' ? 'month' : 'year'}
+                            / {plan.duration} {plan.duration_unit?.toLowerCase() || 'days'}
                           </span>
                         </div>
 
@@ -378,7 +440,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <div className="space-y-2 border-t border-slate-800/80 pt-3">
                           {plan.features.map((feat, i) => (
                             <div key={i} className="flex items-center space-x-2 text-xs text-slate-300">
-                              <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                              <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                               <span>{feat}</span>
                             </div>
                           ))}
@@ -386,7 +448,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </div>
 
                       <div className="mt-5 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-                        <span>{plan.max_bots} Connected Bots</span>
+                        <span>{plan.max_bots || 10} Connected Bots</span>
                         <span>Full Bot No-Code Editor</span>
                       </div>
                     </div>
@@ -394,10 +456,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 })}
               </div>
 
-              {/* Payment Gateway Options */}
-              <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4">
-                <div className="text-xs font-bold text-slate-300 mb-3">Payment Method</div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* Payment Method Selector */}
+              <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-slate-300">Choose Payment Method</div>
+                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>Server-Side Atomic Settlement</span>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                  {/* FZ PAY INTERNAL WALLET */}
+                  <button
+                    key="FZ_PAY"
+                    type="button"
+                    onClick={() => {
+                      setProvider('FZ_PAY');
+                      setError(null);
+                      setInsufficientBalance(false);
+                    }}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden ${
+                      provider === 'FZ_PAY'
+                        ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/50'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-xs font-black text-white flex items-center gap-1">
+                        <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>FZ PAY Wallet</span>
+                      </div>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-extrabold uppercase">
+                        ZERO FEE
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-300">
+                      Balance: <strong className="text-emerald-400 font-mono">₹{(wallet?.balance || 0).toLocaleString()}</strong>
+                    </div>
+                  </button>
+
                   {[
                     { id: 'UPI', label: 'UPI / Dynamic QR', desc: 'PhonePe, GPay, Paytm' },
                     { id: 'RAZORPAY', label: 'Razorpay PG', desc: 'Cards & NetBanking' },
@@ -407,7 +505,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <button
                       key={gw.id}
                       type="button"
-                      onClick={() => setProvider(gw.id as any)}
+                      onClick={() => {
+                        setProvider(gw.id as any);
+                        setError(null);
+                        setInsufficientBalance(false);
+                      }}
                       className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                         provider === gw.id
                           ? 'bg-cyan-500/10 border-cyan-500 text-cyan-300'
@@ -419,6 +521,74 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </button>
                   ))}
                 </div>
+
+                {/* FZ PAY WALLET PAYMENT DETAILS & BALANCE CHECK */}
+                {provider === 'FZ_PAY' && (
+                  <div className="p-4 rounded-xl bg-slate-950/80 border border-emerald-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Wallet className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold text-white">FZ PAY Wallet Order Summary</span>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        (wallet?.balance || 0) >= planPrice
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        {(wallet?.balance || 0) >= planPrice ? 'READY TO PAY' : 'INSUFFICIENT BALANCE'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block uppercase font-bold">Plan Name</span>
+                        <span className="font-bold text-white">{selectedPlan?.name || 'Pro Tier'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block uppercase font-bold">Plan Price</span>
+                        <span className="font-bold text-cyan-400 font-mono">₹{planPrice}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block uppercase font-bold">Duration</span>
+                        <span className="font-bold text-slate-200">
+                          {selectedPlan?.duration || (billingCycle === 'YEARLY' ? 365 : 30)} {selectedPlan?.duration_unit?.toLowerCase() || 'days'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block uppercase font-bold">Current Wallet Balance</span>
+                        <span className={`font-bold font-mono ${(wallet?.balance || 0) >= planPrice ? 'text-emerald-400' : 'text-red-400'}`}>
+                          ₹{(wallet?.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block uppercase font-bold">Amount Required</span>
+                        <span className="font-bold text-white font-mono">₹{planPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+
+                    {/* Insufficient Balance State */}
+                    {(wallet?.balance || 0) < planPrice && (
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+                        <div className="flex items-center space-x-2 text-red-400 text-xs">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>Insufficient FZ PAY balance. Please add money to your wallet.</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            if (onNavigate) onNavigate('fz-pay');
+                            else window.location.assign('/fz-pay');
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shrink-0 flex items-center justify-center space-x-1 cursor-pointer transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add Money (Shortfall: ₹{(planPrice - (wallet?.balance || 0)).toFixed(2)})</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -440,31 +610,61 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleInitiateOrder}
-                disabled={loading}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Preparing Payment Order...</span>
-                  </>
+
+              {provider === 'FZ_PAY' ? (
+                (wallet?.balance || 0) < planPrice ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      if (onNavigate) onNavigate('fz-pay');
+                      else window.location.assign('/fz-pay');
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-emerald-500/20 flex items-center space-x-2 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Money to Wallet</span>
+                  </button>
                 ) : (
-                  <>
-                    <Crown className="w-4 h-4" />
-                    <span>
-                      Proceed to Pay ₹
-                      {selectedPlan
-                        ? billingCycle === 'MONTHLY'
-                          ? selectedPlan.price_monthly
-                          : selectedPlan.price_yearly
-                        : 299}
-                    </span>
-                  </>
-                )}
-              </button>
+                  <button
+                    type="button"
+                    onClick={handlePayWithWallet}
+                    disabled={loading}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-emerald-500/20 flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Debiting Wallet & Activating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Wallet className="w-4 h-4" />
+                        <span>Pay ₹{planPrice} with FZ PAY Wallet</span>
+                      </>
+                    )}
+                  </button>
+                )
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleInitiateOrder}
+                  disabled={loading}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Preparing Payment Order...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Crown className="w-4 h-4" />
+                      <span>Proceed to Pay ₹{planPrice}</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         )}

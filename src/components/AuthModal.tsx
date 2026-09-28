@@ -25,10 +25,12 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess }) => {
   const [mode, setMode] = useState<'signin' | 'signup' | 'admin'>('signin');
   const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
+  const [adminSubView, setAdminSubView] = useState<'login' | 'reset'>('login');
 
   // Form Fields
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [otpCode, setOtpCode] = useState('');
@@ -55,7 +57,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess }) => {
   if (!isOpen) return null;
 
   // Handle Send OTP
-  const handleSendOtp = async (purpose: 'REGISTER' | 'LOGIN') => {
+  const handleSendOtp = async (purpose: 'REGISTER' | 'LOGIN' | 'RESET_PASSWORD') => {
     if (!emailOrPhone.trim()) {
       setError('Please enter your email address or phone number.');
       return;
@@ -190,6 +192,43 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess }) => {
       }
     } catch (err: any) {
       setError(err.message || 'Administrator authentication denied.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Owner Reset / Setup with OTP
+  const handleOwnerReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailOrPhone.trim()) {
+      setError('Please provide the administrator email address.');
+      return;
+    }
+    if (!otpCode.trim()) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+    if (!newAdminPassword || newAdminPassword.length < 6) {
+      setError('New administrator password must be at least 6 characters long.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const res = await api.ownerResetWithOtp({
+        email: emailOrPhone.trim(),
+        code: otpCode.trim(),
+        new_password: newAdminPassword.trim()
+      });
+      if (res.user) {
+        setSuccessMessage('Administrator credentials updated! Authenticating session...');
+        setTimeout(() => onSuccess(res.user), 600);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to update administrator credentials.');
     } finally {
       setLoading(false);
     }
@@ -551,59 +590,195 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onSuccess }) => {
         {/* MODE: ADMIN & OWNER EXCLUSIVE PORTAL     */}
         {/* ========================================= */}
         {mode === 'admin' && (
-          <form onSubmit={handleAdminLogin} className="p-6 space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-300 mb-1 block">Admin Email / Username</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                  <Shield className="w-4 h-4 text-amber-400" />
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={emailOrPhone}
-                  onChange={e => setEmailOrPhone(e.target.value)}
-                  placeholder="admin@telesell.io or owner@telesell.io"
-                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-amber-400 outline-none"
-                />
-              </div>
+          <div className="p-6 space-y-4">
+            {/* Admin Subview Switcher */}
+            <div className="flex p-1 bg-slate-900 rounded-xl border border-slate-800 space-x-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminSubView('login');
+                  setError(null);
+                  setSuccessMessage(null);
+                }}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  adminSubView === 'login'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Admin Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminSubView('reset');
+                  setError(null);
+                  setSuccessMessage(null);
+                }}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  adminSubView === 'reset'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Owner Setup / Reset
+              </button>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-300 mb-1 block">Master Admin Password</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                  <Lock className="w-4 h-4 text-amber-400" />
+            {adminSubView === 'login' ? (
+              <form onSubmit={handleAdminLogin} className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 mb-1 block">Admin Email / Username</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                      <Shield className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={emailOrPhone}
+                      onChange={e => setEmailOrPhone(e.target.value)}
+                      placeholder="admin@telesell.io or your admin email"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-amber-400 outline-none"
+                    />
+                  </div>
                 </div>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-amber-400 outline-none"
-                />
-              </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs tracking-wider transition-all flex items-center justify-center space-x-2 shadow-lg shadow-amber-500/20 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                  <span>Authenticating Privileges...</span>
-                </>
-              ) : (
-                <>
-                  <Shield className="w-4 h-4" />
-                  <span>Verify Administrator Access</span>
-                </>
-              )}
-            </button>
-          </form>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-300">Master Admin Password</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminSubView('reset');
+                        setError(null);
+                      }}
+                      className="text-[11px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Forgot / Initial Setup?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                      <Lock className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-amber-400 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs tracking-wider transition-all flex items-center justify-center space-x-2 shadow-lg shadow-amber-500/20 cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Authenticating Privileges...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Shield className="w-4 h-4" />
+                      <span>Verify Administrator Access</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleOwnerReset} className="space-y-4">
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300/90 leading-relaxed">
+                  Enter your admin email address to request a secure 6-digit OTP code and configure a new master password.
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 mb-1 block">Admin Email Address</label>
+                  <div className="flex space-x-2">
+                    <div className="relative flex-1">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="email"
+                        required
+                        value={emailOrPhone}
+                        onChange={e => setEmailOrPhone(e.target.value)}
+                        placeholder="admin@telesell.io or owner email"
+                        className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-amber-400 outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={loading || otpCooldown > 0 || !emailOrPhone.trim()}
+                      onClick={() => handleSendOtp('RESET_PASSWORD')}
+                      className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 disabled:opacity-50 text-amber-300 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer"
+                    >
+                      {otpCooldown > 0 ? `${otpCooldown}s` : otpSent ? 'Resend' : 'Send OTP'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-amber-400 mb-1 block">6-Digit Security OTP</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-amber-400">
+                      <KeyRound className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={e => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="123456"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-900/90 border border-amber-500/50 rounded-xl text-xs text-white tracking-widest font-mono text-center font-bold focus:border-amber-400 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 mb-1 block">New Master Admin Password</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                      <Lock className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      value={newAdminPassword}
+                      onChange={e => setNewAdminPassword(e.target.value)}
+                      placeholder="Minimum 6 characters"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-amber-400 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || !otpCode.trim() || !newAdminPassword.trim()}
+                  className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs tracking-wider transition-all flex items-center justify-center space-x-2 shadow-lg shadow-amber-500/20 cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Updating Credentials...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Save & Sign In as Admin</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
         )}
 
         {/* Footer with Discreet Portal Access */}

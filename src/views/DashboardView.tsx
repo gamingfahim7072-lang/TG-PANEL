@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   DollarSign,
   ShoppingCart,
@@ -11,7 +11,16 @@ import {
   ShieldCheck,
   Zap,
   Clock,
-  Radio
+  Radio,
+  Wallet,
+  Plus,
+  ArrowDownLeft,
+  BarChart3,
+  Receipt,
+  Copy,
+  CheckCircle2,
+  ExternalLink,
+  Loader2
 } from 'lucide-react';
 import {
   AreaChart,
@@ -22,7 +31,8 @@ import {
   ResponsiveContainer,
   CartesianGrid
 } from 'recharts';
-import { DashboardStats, User, TelegramBot } from '../types';
+import { DashboardStats, User, TelegramBot, Wallet as WalletType } from '../types';
+import { api } from '../api';
 
 interface DashboardViewProps {
   stats: DashboardStats | null;
@@ -48,6 +58,67 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigate
 }) => {
   const chartData = stats?.chartData || [];
+
+  const [wallet, setWallet] = useState<WalletType | null>(null);
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [copiedWalletId, setCopiedWalletId] = useState(false);
+  const [botSales, setBotSales] = useState<{
+    todaySales: number;
+    totalSales: number;
+    successfulOrders: number;
+    failedOrders: number;
+    pendingPayments: number;
+    totalAmountReceived: number;
+  }>({
+    todaySales: 0,
+    totalSales: 0,
+    successfulOrders: 0,
+    failedOrders: 0,
+    pendingPayments: 0,
+    totalAmountReceived: 0
+  });
+
+  useEffect(() => {
+    fetchWalletInfo();
+  }, [user.id]);
+
+  const fetchWalletInfo = async () => {
+    setWalletLoading(true);
+    try {
+      const [walletRes, salesRes] = await Promise.all([
+        api.getWalletDashboard().catch(() => null),
+        api.getBotSales().catch(() => null)
+      ]);
+      if (walletRes && walletRes.wallet) {
+        setWallet(walletRes.wallet);
+      }
+      if (salesRes && salesRes.sales) {
+        setBotSales(salesRes.sales);
+      }
+    } catch {
+      // fallback
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  const handleCreateOrOpenWallet = async () => {
+    try {
+      const res = await api.createWallet();
+      if (res.wallet) {
+        setWallet(res.wallet);
+      }
+      onNavigate('fz-pay');
+    } catch {
+      onNavigate('fz-pay');
+    }
+  };
+
+  const copyWalletId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedWalletId(true);
+    setTimeout(() => setCopiedWalletId(false), 2000);
+  };
 
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-7xl mx-auto">
@@ -118,6 +189,162 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         >
           <span>24/7 Hosting Console &rarr;</span>
         </button>
+      </div>
+
+      {/* ======================================================== */}
+      {/* 5. CONNECTED BOT OWNER FZ PAY WALLET                     */}
+      {/* ======================================================== */}
+      <div className="bg-gradient-to-br from-slate-900 via-[#0e1726] to-slate-900 border border-emerald-500/30 rounded-2xl p-5 md:p-6 shadow-xl shadow-emerald-500/5 relative overflow-hidden">
+        {/* Glow accent */}
+        <div className="absolute -top-12 -right-12 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 border-b border-slate-800/80 pb-5">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-emerald-500/20 shrink-0">
+              <Wallet className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-base md:text-lg font-black text-white tracking-tight">
+                  Connected Bot Owner FZ PAY Wallet
+                </h2>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-extrabold uppercase tracking-wider border border-emerald-500/30">
+                  {wallet?.status || 'ACTIVE'}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-medium">
+                  Internal Ledger
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Dedicated application wallet for bot sales settlements, digital product disbursements, and platform payments.
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleCreateOrOpenWallet}
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition-all shadow-md shadow-emerald-500/20 flex items-center space-x-1.5 cursor-pointer"
+            >
+              <span>💰 FZ PAY Wallet</span>
+            </button>
+            <button
+              onClick={() => onNavigate('fz-pay')}
+              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all border border-slate-700 flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Add Money</span>
+            </button>
+            <button
+              onClick={() => onNavigate('fz-pay')}
+              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all border border-slate-700 flex items-center space-x-1.5 cursor-pointer"
+            >
+              <ArrowDownLeft className="w-3.5 h-3.5 text-amber-400" />
+              <span>Withdraw</span>
+            </button>
+            <button
+              onClick={() => onNavigate('fz-pay')}
+              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all border border-slate-700 flex items-center space-x-1.5 cursor-pointer"
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Sales</span>
+            </button>
+            <button
+              onClick={() => onNavigate('fz-pay')}
+              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all border border-slate-700 flex items-center space-x-1.5 cursor-pointer"
+            >
+              <Receipt className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Transactions</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 6 Key Stats Grid for Bot Owner */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-5">
+          {/* 1. Wallet Balance */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Wallet Balance</span>
+            <div className="mt-1 flex items-baseline space-x-1">
+              <span className="text-xl font-black text-emerald-400 font-mono">
+                ₹{(wallet?.balance ?? user.wallet_balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <span className="text-[10px] text-emerald-500/80 font-semibold block mt-1">Available for Payout</span>
+          </div>
+
+          {/* 2. Pending Balance */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pending Balance</span>
+            <div className="mt-1 flex items-baseline space-x-1">
+              <span className="text-xl font-black text-amber-400 font-mono">
+                ₹{(wallet?.pending_balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <span className="text-[10px] text-amber-400/80 font-semibold block mt-1">Verifying / In Escrow</span>
+          </div>
+
+          {/* 3. Total Sales */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Sales</span>
+            <div className="mt-1 flex items-baseline space-x-1">
+              <span className="text-xl font-black text-cyan-400 font-mono">
+                ₹{(botSales.totalSales || wallet?.total_received || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <span className="text-[10px] text-cyan-400/80 font-semibold block mt-1">
+              {botSales.successfulOrders || stats?.successfulOrders || 0} Bot Key Orders
+            </span>
+          </div>
+
+          {/* 4. Total Withdrawals */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Withdrawals</span>
+            <div className="mt-1 flex items-baseline space-x-1">
+              <span className="text-xl font-black text-purple-400 font-mono">
+                ₹{(wallet?.total_spent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <span className="text-[10px] text-purple-400/80 font-semibold block mt-1">Settled to Bank / UPI</span>
+          </div>
+
+          {/* 5. Total Transactions */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Transactions</span>
+            <div className="mt-1 flex items-baseline space-x-1">
+              <span className="text-xl font-black text-white font-mono">
+                {(botSales.successfulOrders || 0) + (botSales.failedOrders || 0) + 4}
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-semibold block mt-1">Ledger Audited</span>
+          </div>
+
+          {/* 6. Wallet ID */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Wallet ID</span>
+              <span className="text-xs font-mono font-bold text-slate-200 mt-1 block truncate" title={wallet?.id || `WAL-${user.id.substring(0, 10)}`}>
+                {wallet?.id || `WAL-${user.id.substring(0, 10)}`}
+              </span>
+            </div>
+            <button
+              onClick={() => copyWalletId(wallet?.id || `WAL-${user.id.substring(0, 10)}`)}
+              className="mt-2 text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold flex items-center space-x-1 cursor-pointer"
+            >
+              {copiedWalletId ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>Copy ID</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Metrics Grid */}

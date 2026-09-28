@@ -30,6 +30,8 @@ import { BillingView } from './views/BillingView';
 import { AdminView } from './views/AdminView';
 import { SettingsView } from './views/SettingsView';
 import { HostingView } from './views/HostingView';
+import { SubscriptionManagementView } from './views/SubscriptionManagementView';
+import { FzPayView } from './views/FzPayView';
 
 import {
   LayoutDashboard,
@@ -40,7 +42,8 @@ import {
   Radio,
   Sliders,
   Sparkles,
-  Loader2
+  Loader2,
+  Wallet
 } from 'lucide-react';
 
 export function App() {
@@ -49,11 +52,53 @@ export function App() {
   const [bots, setBots] = useState<TelegramBot[]>([]);
   const [selectedBotId, setSelectedBotId] = useState<string>('');
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [currentView, setCurrentView] = useState<string>('dashboard');
+  const [currentView, setCurrentView] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.replace(/^\//, '');
+      if (path === 'fz-pay' || path === 'fzpay') return 'fz-pay';
+      if (path && ['dashboard', 'bots', 'editor', 'products', 'orders', 'customers', 'broadcasts', 'coupons', 'resellers', 'billing', 'subscriptions', 'hosting', 'admin', 'settings'].includes(path)) {
+        return path;
+      }
+    }
+    return 'dashboard';
+  });
   const [loading, setLoading] = useState(true);
   const [showIntro, setShowIntro] = useState(() => {
     return sessionStorage.getItem('fz_intro_seen') !== 'true';
   });
+
+  const handleNavigate = (view: string) => {
+    setCurrentView(view);
+    if (typeof window !== 'undefined') {
+      const targetPath = view === 'fz-pay' ? '/fz-pay' : (view === 'dashboard' ? '/' : `/${view}`);
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({}, '', targetPath);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.replace(/^\//, '');
+      if (path === 'fz-pay' || path === 'fzpay') {
+        setCurrentView('fz-pay');
+      } else if (path) {
+        setCurrentView(path);
+      } else {
+        setCurrentView('dashboard');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (currentView === 'fz-pay') {
+      document.title = 'FZ PAY - Internal Wallet & Payment Verification';
+    } else {
+      document.title = 'TeleDash SaaS Pro - Telegram Commerce & Bot Automation';
+    }
+  }, [currentView]);
 
   // Modals state
   const [showConnectBot, setShowConnectBot] = useState(false);
@@ -201,7 +246,7 @@ export function App() {
         onOpenLiveSimulator={() => setShowLiveSimulator(true)}
         onLogout={handleLogout}
         onSwitchRoleQuick={handleSwitchRoleQuick}
-        onNavigate={setCurrentView}
+        onNavigate={handleNavigate}
       />
 
       {/* Main Container */}
@@ -209,7 +254,7 @@ export function App() {
         {/* Sidebar */}
         <Sidebar
           currentView={currentView}
-          onNavigate={setCurrentView}
+          onNavigate={handleNavigate}
           user={user}
           subscription={subscription}
           onOpenConnectBot={() => setShowConnectBot(true)}
@@ -231,7 +276,7 @@ export function App() {
               onOpenLiveSimulator={() => setShowLiveSimulator(true)}
               onOpenBroadcast={() => setShowBroadcast(true)}
               onSelectOrder={setSelectedOrder}
-              onNavigate={setCurrentView}
+              onNavigate={handleNavigate}
             />
           )}
 
@@ -244,9 +289,10 @@ export function App() {
               onOpenLiveSimulator={() => setShowLiveSimulator(true)}
               onNavigateToEditor={botId => {
                 setSelectedBotId(botId);
-                setCurrentView('editor');
+                handleNavigate('editor');
               }}
               onRefreshBots={loadCoreData}
+              onNavigate={handleNavigate}
             />
           )}
 
@@ -304,6 +350,28 @@ export function App() {
             />
           )}
 
+          {currentView === 'subscriptions' && (
+            (user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN') ? (
+              <SubscriptionManagementView
+                user={user}
+                onOpenCheckout={() => setShowCheckout(true)}
+              />
+            ) : (
+              <div className="p-8 text-center">
+                <div className="max-w-md mx-auto p-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400">
+                  <h3 className="text-base font-bold">Access Denied</h3>
+                  <p className="text-xs text-slate-300 mt-1">Subscription plan management is strictly restricted to platform Administrators and Owners.</p>
+                  <button
+                    onClick={() => setCurrentView('dashboard')}
+                    className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Return to Dashboard
+                  </button>
+                </div>
+              </div>
+            )
+          )}
+
           {currentView === 'hosting' && <HostingView />}
 
           {currentView === 'admin' && (
@@ -326,6 +394,14 @@ export function App() {
           )}
 
           {currentView === 'settings' && <SettingsView user={user} />}
+
+          {currentView === 'fz-pay' && (
+            <FzPayView
+              user={user}
+              onOpenCheckout={() => setShowCheckout(true)}
+              onNavigate={handleNavigate}
+            />
+          )}
         </main>
       </div>
 
@@ -334,7 +410,7 @@ export function App() {
         {[
           { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
           { id: 'bots', label: 'Bots', icon: Bot },
-          { id: 'editor', label: 'Editor', icon: Sliders },
+          { id: 'fz-pay', label: 'FZ PAY', icon: Wallet },
           { id: 'products', label: 'Products', icon: Package },
           { id: 'orders', label: 'Orders', icon: ShoppingCart }
         ].map(item => {
@@ -343,7 +419,7 @@ export function App() {
           return (
             <button
               key={item.id}
-              onClick={() => setCurrentView(item.id)}
+              onClick={() => handleNavigate(item.id)}
               className={`flex flex-col items-center justify-center space-y-1 py-1 px-3 rounded-lg text-[10px] font-semibold transition-colors ${
                 isActive ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-200'
               }`}
@@ -401,6 +477,7 @@ export function App() {
           setSubscription(newSub);
           loadCoreData();
         }}
+        onNavigate={handleNavigate}
       />
 
       <BroadcastModal

@@ -325,14 +325,56 @@ export function assertOwnership(user: User, resourceOwnerId: string, resourceNam
 export async function seedInitialUsers() {
   const now = new Date().toISOString();
   const thirtyDaysAhead = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const configuredAdminEmail = (process.env.ADMIN_EMAIL || 'admin@telesell.io').trim().toLowerCase();
+  const configuredAdminPass = process.env.ADMIN_PASSWORD || 'Admin@2026!';
+  const configuredOwnerEmail = (process.env.OWNER_EMAIL || 'owner@telesell.io').trim().toLowerCase();
+  const configuredOwnerPass = process.env.OWNER_PASSWORD || 'Owner@2026!';
 
-  // 1. Ensure Owner Account exists
-  let owner = db.users.find(u => u.email.toLowerCase() === 'owner@telesell.io' || u.role === 'OWNER' || u.role === 'SUPER ADMIN');
+  // 1. Ensure Admin Account exists with guaranteed working credentials
+  let admin = db.users.find(u => u.email.toLowerCase() === configuredAdminEmail);
+  const adminHashedPass = await CryptoService.hashPassword(configuredAdminPass);
+
+  if (!admin) {
+    admin = {
+      id: 'usr-admin-01',
+      email: configuredAdminEmail,
+      username: 'fz_admin',
+      password_hash: adminHashedPass,
+      role: 'SUPER ADMIN',
+      full_name: 'Platform Administrator',
+      telegram_username: 'fz_admin',
+      is_email_verified: true,
+      two_factor_enabled: false,
+      referral_code: 'ADMIN2026',
+      reseller_status: 'APPROVED',
+      reseller_commission_rate: 25,
+      reseller_balance: 12500,
+      wallet_balance: 5000,
+      total_deposited: 5000,
+      total_spent: 0,
+      created_at: now,
+      updated_at: now
+    };
+    db.users.push(admin);
+  } else {
+    // If admin has old unreachable hash or env var is set, update password
+    const isOldInvalidHash = admin.password_hash === '$2b$10$SkD9H.OeE7IfeBAuyGd34epEpZjpXXEw4BGOJvUpSccTqpT91K19y';
+    if (isOldInvalidHash || process.env.ADMIN_PASSWORD) {
+      admin.password_hash = adminHashedPass;
+      admin.updated_at = now;
+    }
+    if (!admin.username) admin.username = 'fz_admin';
+    if (admin.role !== 'SUPER ADMIN' && admin.role !== 'OWNER') admin.role = 'SUPER ADMIN';
+    if (admin.wallet_balance === undefined) admin.wallet_balance = 5000;
+  }
+
+  // 2. Ensure Owner Account exists with guaranteed working credentials
+  let owner = db.users.find(u => u.email.toLowerCase() === configuredOwnerEmail);
   if (!owner) {
-    const ownerPass = await CryptoService.hashPassword('Owner123!');
+    const ownerPass = await CryptoService.hashPassword(configuredOwnerPass);
     owner = {
       id: 'usr-owner-01',
-      email: 'owner@telesell.io',
+      email: configuredOwnerEmail,
       username: 'fz_owner',
       password_hash: ownerPass,
       role: 'OWNER',
@@ -353,37 +395,15 @@ export async function seedInitialUsers() {
     db.users.unshift(owner);
   } else {
     if (!owner.username) owner.username = 'fz_owner';
+    if (owner.role !== 'OWNER' && owner.role !== 'SUPER ADMIN') owner.role = 'OWNER';
     if (owner.wallet_balance === undefined) owner.wallet_balance = 10000;
   }
 
-  // 2. Ensure Admin Account exists
-  let admin = db.users.find(u => u.email.toLowerCase() === 'admin@telesell.io');
-  if (!admin) {
-    const adminPass = await CryptoService.hashPassword('Admin123!');
-    admin = {
-      id: 'usr-admin-01',
-      email: 'admin@telesell.io',
-      username: 'fz_admin',
-      password_hash: adminPass,
-      role: 'ADMIN',
-      full_name: 'Platform Administrator',
-      telegram_username: 'fz_admin',
-      is_email_verified: true,
-      two_factor_enabled: false,
-      referral_code: 'ADMIN2026',
-      reseller_status: 'APPROVED',
-      reseller_commission_rate: 25,
-      reseller_balance: 12500,
-      wallet_balance: 5000,
-      total_deposited: 5000,
-      total_spent: 0,
-      created_at: now,
-      updated_at: now
-    };
-    db.users.push(admin);
-  } else {
-    if (!admin.username) admin.username = 'fz_admin';
-    if (admin.wallet_balance === undefined) admin.wallet_balance = 5000;
+  // 3. Elevate primary registered developer account to OWNER role
+  const devAccount = db.users.find(u => u.email.toLowerCase() === 'gamingfahim7072@gmail.com');
+  if (devAccount) {
+    devAccount.role = 'OWNER';
+    devAccount.updated_at = now;
   }
 
   // Ensure Admin Permissions exist

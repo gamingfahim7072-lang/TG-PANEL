@@ -34,7 +34,9 @@ import {
   PaymentBankSettings,
   PaymentProviderConfig,
   WithdrawalRequest,
-  RefundRecord
+  RefundRecord,
+  Wallet,
+  WalletTransaction
 } from './db.js';
 import { CryptoService } from './crypto.js';
 import {
@@ -49,6 +51,7 @@ import {
 } from './auth.js';
 import { TelegramService, TelegramPollingManager } from './telegram.js';
 import { PaymentService } from './payment.js';
+import { WalletService } from './wallet.js';
 import { CronService } from './cron.js';
 
 export const apiRouter = Router();
@@ -441,6 +444,199 @@ apiRouter.post('/auth/admin-login', rateLimit({ max: 10, windowMs: 60000 }), asy
   } catch (err: any) {
     console.error('Admin login error:', err);
     return res.status(500).json({ success: false, error: 'Admin authentication failed.' });
+  }
+});
+
+// Non-sensitive Admin Status query
+apiRouter.get('/auth/admin-status', rateLimit({ max: 30, windowMs: 60000 }), async (_req: Request, res: Response) => {
+  const adminUsers = db.users.filter(u => {
+    const r = (u.role || '').toUpperCase();
+    return r === 'ADMIN' || r === 'OWNER' || r === 'SUPER ADMIN';
+  });
+
+  return res.json({
+    success: true,
+    hasAdmin: adminUsers.length > 0,
+    adminCount: adminUsers.length,
+    defaultEmail: adminUsers[0]?.email || 'admin@telesell.io',
+    accounts: adminUsers.map(a => ({
+      email: a.email,
+      role: a.role,
+      username: a.username,
+      full_name: a.full_name
+    }))
+  });
+});
+
+// First-time or Emergency Owner Setup / Reset via Verified OTP
+apiRouter.post('/auth/owner-reset-with-otp', rateLimit({ max: 5, windowMs: 60000 }), async (req: Request, res: Response) => {
+  try {
+    const { email, code, new_password } = req.body;
+    if (!email || !code || !new_password) {
+      return res.status(400).json({ success: false, error: 'Admin email, OTP verification code, and new password are required.' });
+    }
+
+    if (String(new_password).length < 6) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanCode = String(code).trim();
+
+    // Verify OTP record
+    const otpRecord = db.otp_records.find(
+      r => r.identifier === cleanEmail && (r.purpose === 'RESET_PASSWORD' || r.purpose === 'LOGIN') && !r.verified
+    );
+
+    if (!otpRecord) {
+      return res.status(400).json({ success: false, error: 'No active OTP verification code found. Please click "Send OTP" first.' });
+    }
+
+    if (new Date(otpRecord.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ success: false, error: 'Verification code has expired. Please request a new code.' });
+    }
+
+    const isMatch = await CryptoService.comparePassword(cleanCode, otpRecord.code_hash);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, error: 'Invalid verification code.' });
+    }
+
+    otpRecord.verified = true;
+
+    // Find or create account
+    let user = db.users.find(u => u.email.toLowerCase() === cleanEmail);
+    const newHash = await CryptoService.hashPassword(String(new_password));
+    const nowStr = new Date().toISOString();
+
+    if (!user) {
+      user = {
+        id: `usr-admin-${Date.now()}`,
+        email: cleanEmail,
+        username: cleanEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_'),
+        password_hash: newHash,
+        role: 'OWNER',
+        full_name: 'FZ System Owner',
+        is_email_verified: true,
+        two_factor_enabled: false,
+        referral_code: CryptoService.generateReferralCode(8),
+        reseller_status: 'APPROVED',
+        reseller_commission_rate: 30,
+        reseller_balance: 50000,
+        wallet_balance: 10000,
+        total_deposited: 10000,
+        total_spent: 0,
+        created_at: nowStr,
+        updated_at: nowStr
+      };
+      db.users.push(user);
+    } else {
+      user.password_hash = newHash;
+      user.updated_at = nowStr;
+      // Guarantee Owner / Super Admin privilege
+      const currentRole = (user.role || '').toUpperCase();
+      if (currentRole !== 'OWNER' && currentRole !== 'SUPER ADMIN' && currentRole !== 'ADMIN') {
+        user.role = 'OWNER';
+      }
+    }
+
+    db.saveImmediately();
+
+    const token = CryptoService.generateJwt({ userId: user.id, role: user.role });
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'ADMIN_CREDENTIALS_RESET_OTP',
+      resourceType: 'SECURITY',
+      req
+    });
+
+    return res.json({
+      success: true,
+      message: 'Admin credentials updated successfully! You are now signed in.',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        role: user.role,
+        referral_code: user.referral_code,
+        wallet_balance: user.wallet_balance || 0
+      }
+    });
+  } catch (err: any) {
+    console.error('Owner reset error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to reset admin credentials.' });
+  }
+});
+
+// Authenticated Admin Credential Management (Change Admin Email / Password / Username)
+apiRouter.post('/admin/update-credentials', authenticate, requireRole('OWNER', 'SUPER ADMIN', 'ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { current_password, new_email, new_password, new_username } = req.body;
+
+    if (current_password) {
+      const isMatch = await CryptoService.comparePassword(current_password, user.password_hash);
+      if (!isMatch) {
+        return res.status(400).json({ success: false, error: 'Current password does not match.' });
+      }
+    }
+
+    if (new_email && new_email.trim().toLowerCase() !== user.email.toLowerCase()) {
+      const cleanEmail = new_email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ success: false, error: 'Please enter a valid email address.' });
+      }
+      const conflict = db.users.find(u => u.id !== user.id && u.email.toLowerCase() === cleanEmail);
+      if (conflict) {
+        return res.status(400).json({ success: false, error: 'An account with this email address already exists.' });
+      }
+      user.email = cleanEmail;
+    }
+
+    if (new_username && new_username.trim().toLowerCase() !== user.username?.toLowerCase()) {
+      const cleanUsername = new_username.trim().toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
+      const conflict = db.users.find(u => u.id !== user.id && u.username?.toLowerCase() === cleanUsername);
+      if (conflict) {
+        return res.status(400).json({ success: false, error: 'This username is already in use.' });
+      }
+      user.username = cleanUsername;
+    }
+
+    if (new_password) {
+      if (String(new_password).length < 6) {
+        return res.status(400).json({ success: false, error: 'New password must be at least 6 characters long.' });
+      }
+      user.password_hash = await CryptoService.hashPassword(String(new_password));
+    }
+
+    user.updated_at = new Date().toISOString();
+    db.saveImmediately();
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'ADMIN_CREDENTIALS_UPDATED',
+      resourceType: 'SECURITY',
+      req
+    });
+
+    return res.json({
+      success: true,
+      message: 'Admin credentials updated successfully.',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        full_name: user.full_name,
+        role: user.role,
+        wallet_balance: user.wallet_balance || 0
+      }
+    });
+  } catch (err: any) {
+    console.error('Update admin credentials error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to update credentials.' });
   }
 });
 
@@ -1425,6 +1621,260 @@ apiRouter.post('/payments/verify-key-payment', authenticate, rateLimit({ max: 20
   }
 });
 
+// ==========================================
+// 2. FZ PAY WALLET & INTERNAL PAYMENT ROUTES
+// ==========================================
+
+// Get authenticated user's wallet dashboard
+apiRouter.get('/wallet/my', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = WalletService.getWalletDashboard(req.user!.id);
+    return res.json({ success: true, ...data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Explicitly open or create wallet
+apiRouter.post('/wallet/create', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const wallet = WalletService.getOrCreateWallet(req.user!.id);
+    return res.json({ success: true, message: 'FZ PAY Wallet ready.', wallet });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get wallet transactions ledger with optional filters
+apiRouter.get('/wallet/transactions', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const wallet = WalletService.getOrCreateWallet(req.user!.id);
+    const { type, status } = req.query;
+
+    let txs = (db.wallet_transactions || []).filter(t => t.wallet_id === wallet.id || t.user_id === req.user!.id);
+    if (type) txs = txs.filter(t => t.type === String(type));
+    if (status) txs = txs.filter(t => t.status === String(status));
+
+    txs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return res.json({ success: true, transactions: txs });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Initiate Add Money (returns PENDING payment order and UPI QR details)
+apiRouter.post('/wallet/add-money', authenticate, rateLimit({ max: 20, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { amount, provider } = req.body;
+    const result = WalletService.initiateAddMoney({
+      userId: req.user!.id,
+      amount: Number(amount),
+      provider
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Verify Add Money deposit (atomic credit upon confirmed verification)
+apiRouter.post('/wallet/verify-deposit', authenticate, rateLimit({ max: 20, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { paymentId, orderId, transactionId, provider } = req.body;
+    const result = WalletService.verifyAddMoney({
+      userId: req.user!.id,
+      paymentId,
+      orderId,
+      transactionId,
+      provider
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Pay Premium subscription with FZ PAY wallet
+apiRouter.post('/wallet/pay-premium', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { planId, billingCycle } = req.body;
+    if (!planId) {
+      return res.status(400).json({ success: false, error: 'Plan ID is required.' });
+    }
+    const result = WalletService.paySubscriptionWithWallet({
+      userId: req.user!.id,
+      planId,
+      billingCycle
+    });
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Purchase bot product with FZ PAY wallet
+apiRouter.post('/wallet/pay-product', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { productId, packageId } = req.body;
+    if (!productId) {
+      return res.status(400).json({ success: false, error: 'Product ID is required.' });
+    }
+    const result = WalletService.payBotProductWithWallet({
+      customerUserId: req.user!.id,
+      productId,
+      packageId
+    });
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Send money to another FZ PAY wallet
+apiRouter.post('/wallet/send', authenticate, rateLimit({ max: 15, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { recipientWalletId, amount, note } = req.body;
+    if (!recipientWalletId || !amount) {
+      return res.status(400).json({ success: false, error: 'Recipient Wallet ID and amount are required.' });
+    }
+    const result = WalletService.transferMoney({
+      senderUserId: req.user!.id,
+      recipientWalletId,
+      amount: Number(amount),
+      note
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Request withdrawal from FZ PAY wallet
+apiRouter.post('/wallet/withdraw', authenticate, rateLimit({ max: 10, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { amount, method, upiId, bankName, accountNumber, ifsc, notes } = req.body;
+    const result = WalletService.requestWithdrawal({
+      userId: req.user!.id,
+      amount: Number(amount),
+      method,
+      upiId,
+      bankName,
+      accountNumber,
+      ifsc,
+      notes
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Connected bot owner sales metrics
+apiRouter.get('/wallet/bot-sales', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const sales = WalletService.getBotOwnerSales(req.user!.id);
+    return res.json({ success: true, ...sales });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Customer purchase orders history
+apiRouter.get('/wallet/my-purchases', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const purchases = WalletService.getCustomerPurchases(req.user!.id);
+    return res.json({ success: true, purchases });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin: Overview of all FZ PAY wallets & financial ledger
+apiRouter.get('/admin/fz-pay/overview', authenticate, requireRole('OWNER', 'SUPER ADMIN', 'ADMIN'), async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const wallets = db.wallets || [];
+    const transactions = (db.wallet_transactions || []).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    const withdrawals = (db.withdrawals || []).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    const totalSystemBalance = wallets.reduce((sum, w) => sum + (w.balance || 0), 0);
+    const totalPendingPayouts = withdrawals
+      .filter(w => w.status === 'PENDING' || w.status === 'PROCESSING')
+      .reduce((sum, w) => sum + (w.amount || 0), 0);
+
+    return res.json({
+      success: true,
+      totalWallets: wallets.length,
+      totalSystemBalance,
+      totalPendingPayouts,
+      wallets: wallets.map(w => {
+        const u = db.users.find(x => x.id === w.owner_user_id);
+        return {
+          ...w,
+          user_email: u?.email,
+          user_name: u?.full_name,
+          user_role: u?.role
+        };
+      }),
+      transactions: transactions.slice(0, 100),
+      withdrawals: withdrawals.slice(0, 50)
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin: Process withdrawal
+apiRouter.post('/admin/fz-pay/withdrawals/:id', authenticate, requireRole('OWNER', 'SUPER ADMIN', 'ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { action, referenceId, adminNotes } = req.body;
+    if (action !== 'APPROVE' && action !== 'REJECT') {
+      return res.status(400).json({ success: false, error: 'Action must be APPROVE or REJECT.' });
+    }
+    const result = WalletService.adminProcessWithdrawal({
+      adminUserId: req.user!.id,
+      withdrawalId: id,
+      action,
+      referenceId,
+      adminNotes
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Admin: Manual wallet adjustment
+apiRouter.post('/admin/fz-pay/adjust', authenticate, requireRole('OWNER', 'SUPER ADMIN', 'ADMIN'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { walletId, amount, type, reason } = req.body;
+    if (!walletId || !amount || !type || !reason) {
+      return res.status(400).json({ success: false, error: 'Wallet ID, amount, type (CREDIT/DEBIT), and reason are required.' });
+    }
+    const result = WalletService.adminAdjustWallet({
+      adminUserId: req.user!.id,
+      walletId,
+      amount: Number(amount),
+      type,
+      reason
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // Product Keys Inventory Management
 apiRouter.get('/products/:id/keys', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -1497,9 +1947,17 @@ apiRouter.post('/products/:id/keys', authenticate, async (req: AuthenticatedRequ
 // SUBSCRIPTIONS & CLIENT CHECKOUT
 // ==========================================
 
-apiRouter.get('/subscription/plans', async (_req: Request, res: Response) => {
-  const activePlans = (db.subscription_plans || []).filter(p => p.status === 'ACTIVE');
-  return res.json({ success: true, plans: activePlans });
+apiRouter.get(['/subscription/plans', '/subscription-plans'], async (_req: Request, res: Response) => {
+  const settings = db.subscription_settings;
+  if (settings && !settings.customer_page_visible) {
+    return res.json({ success: true, plans: [], settings, message: 'Subscription plans are currently hidden.' });
+  }
+
+  const activePlans = (db.subscription_plans || [])
+    .filter(p => p.status === 'ACTIVE' && p.active !== false)
+    .sort((a, b) => (a.display_order || 99) - (b.display_order || 99));
+
+  return res.json({ success: true, plans: activePlans, settings });
 });
 
 apiRouter.post('/subscription/create-order', authenticate, rateLimit({ max: 15, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
@@ -1561,66 +2019,141 @@ apiRouter.get('/subscription/payments-history', authenticate, async (req: Authen
   return res.json({ success: true, payments });
 });
 
-// Admin Subscription Plans Management (Monthly, Yearly, Custom)
+// ==========================================
+// OWNER-CONTROLLED SUBSCRIPTION MANAGEMENT
+// ==========================================
+
+// 1. Get all plans (with live subscriber count)
 apiRouter.get('/admin/subscription/plans', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
-  const isAdmin = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
-  if (!isAdmin) return res.status(403).json({ success: false, error: 'Unauthorized.' });
-  return res.json({ success: true, plans: db.subscription_plans || [] });
+  const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+  if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized. Admin/Owner access required.' });
+
+  const plans = (db.subscription_plans || []).map(p => {
+    const subscriberCount = (db.subscriptions || []).filter(
+      s => s.plan_id === p.id && (s.status === 'ACTIVE' || s.status === 'MANUAL_GRANT')
+    ).length;
+    return {
+      ...p,
+      subscriber_count: subscriberCount
+    };
+  }).sort((a, b) => (a.display_order || 99) - (b.display_order || 99));
+
+  return res.json({ success: true, plans, settings: db.subscription_settings });
 });
 
+// 2. Create new subscription plan
 apiRouter.post('/admin/subscription/plans', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
-      return res.status(403).json({ success: false, error: 'Only Owner can create subscription plans.' });
+    const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+    const {
+      name,
+      duration,
+      duration_unit,
+      price,
+      currency,
+      description,
+      features,
+      status,
+      display_order,
+      is_popular,
+      max_bots,
+      max_products,
+      max_broadcasts_per_month
+    } = req.body;
+
+    if (!name || price === undefined) {
+      return res.status(400).json({ success: false, error: 'Plan name and price are required.' });
     }
 
-    const { name, duration, duration_unit, price, currency, description, features, is_popular } = req.body;
-    if (!name || price === undefined) return res.status(400).json({ success: false, error: 'Plan name and price are required.' });
-
+    const durValue = duration ? Number(duration) : 30;
+    const durUnit = (duration_unit || 'DAYS').toUpperCase() as 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS';
+    const planPrice = Number(price);
+    const planCurrency = (currency || db.subscription_settings.default_currency || 'INR').toUpperCase();
     const nowStr = new Date().toISOString();
+
     const newPlan: SubscriptionPlan = {
       id: `plan-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       name: String(name).trim(),
-      duration: duration ? Number(duration) : 30,
-      duration_unit: duration_unit || 'DAYS',
-      price: Number(price),
-      price_monthly: Number(price),
-      price_yearly: Math.round(Number(price) * 10),
-      currency: currency || 'INR',
+      duration: durValue,
+      duration_unit: durUnit,
+      price: planPrice,
+      price_monthly: planPrice,
+      price_yearly: durUnit === 'YEARS' ? planPrice : Math.round(planPrice * 10),
+      currency: planCurrency,
       description: description || '',
-      features: Array.isArray(features) ? features : [String(features)],
-      max_bots: 10,
-      max_products: 100,
-      max_broadcasts_per_month: 25000,
-      status: 'ACTIVE',
-      active: true,
+      features: Array.isArray(features) ? features.filter((f: any) => typeof f === 'string' && f.trim().length > 0) : ['Bot Editing', 'Support'],
+      max_bots: max_bots ? Number(max_bots) : 10,
+      max_products: max_products ? Number(max_products) : 100,
+      max_broadcasts_per_month: max_broadcasts_per_month ? Number(max_broadcasts_per_month) : 25000,
+      status: status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      active: status !== 'INACTIVE',
+      display_order: display_order ? Number(display_order) : (db.subscription_plans.length + 1),
       is_popular: !!is_popular,
+      subscriber_count: 0,
       created_at: nowStr,
       updated_at: nowStr
     };
 
     db.subscription_plans.push(newPlan);
     db.saveImmediately();
-    return res.json({ success: true, plan: newPlan });
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'PLAN_CREATED',
+      resourceType: 'SUBSCRIPTION_PLAN',
+      resourceId: newPlan.id,
+      metadata: {
+        admin: user.email,
+        planName: newPlan.name,
+        price: newPlan.price,
+        duration: `${newPlan.duration} ${newPlan.duration_unit}`,
+        currency: newPlan.currency
+      },
+      req
+    });
+
+    return res.json({ success: true, plan: newPlan, message: `Plan "${newPlan.name}" created successfully.` });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
+// 3. Edit subscription plan
 apiRouter.put('/admin/subscription/plans/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
-      return res.status(403).json({ success: false, error: 'Only Owner can edit subscription plans.' });
-    }
+    const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
 
     const { id } = req.params;
     const plan = db.subscription_plans.find(p => p.id === id);
     if (!plan) return res.status(404).json({ success: false, error: 'Plan not found.' });
 
-    const { name, price, price_monthly, price_yearly, duration, duration_unit, description, features, status, is_popular } = req.body;
+    const {
+      name,
+      price,
+      price_monthly,
+      price_yearly,
+      currency,
+      duration,
+      duration_unit,
+      description,
+      features,
+      status,
+      display_order,
+      is_popular,
+      max_bots,
+      max_products,
+      max_broadcasts_per_month
+    } = req.body;
+
+    const oldPrice = plan.price;
+    const oldDuration = `${plan.duration} ${plan.duration_unit}`;
 
     if (name !== undefined) plan.name = String(name).trim();
     if (price !== undefined) {
@@ -1629,76 +2162,257 @@ apiRouter.put('/admin/subscription/plans/:id', authenticate, async (req: Authent
     }
     if (price_monthly !== undefined) plan.price_monthly = Number(price_monthly);
     if (price_yearly !== undefined) plan.price_yearly = Number(price_yearly);
+    if (currency !== undefined) plan.currency = String(currency).toUpperCase();
     if (duration !== undefined) plan.duration = Number(duration);
     if (duration_unit !== undefined) plan.duration_unit = duration_unit;
     if (description !== undefined) plan.description = description;
-    if (features !== undefined) plan.features = Array.isArray(features) ? features : [String(features)];
-    if (status !== undefined) plan.status = status;
+    if (features !== undefined) {
+      plan.features = Array.isArray(features) ? features.filter((f: any) => typeof f === 'string' && f.trim().length > 0) : plan.features;
+    }
+    if (status !== undefined) {
+      plan.status = status;
+      plan.active = status === 'ACTIVE';
+    }
+    if (display_order !== undefined) plan.display_order = Number(display_order);
     if (is_popular !== undefined) plan.is_popular = !!is_popular;
+    if (max_bots !== undefined) plan.max_bots = Number(max_bots);
+    if (max_products !== undefined) plan.max_products = Number(max_products);
+    if (max_broadcasts_per_month !== undefined) plan.max_broadcasts_per_month = Number(max_broadcasts_per_month);
     plan.updated_at = new Date().toISOString();
 
     db.saveImmediately();
-    return res.json({ success: true, plan });
+
+    // Audit price change specifically if price altered
+    if (price !== undefined && Number(price) !== oldPrice) {
+      logAudit({
+        userId: user.id,
+        userEmail: user.email,
+        action: 'PRICE_CHANGED',
+        resourceType: 'SUBSCRIPTION_PLAN',
+        resourceId: plan.id,
+        metadata: {
+          admin: user.email,
+          planName: plan.name,
+          oldPrice,
+          newPrice: plan.price,
+          currency: plan.currency
+        },
+        req
+      });
+    }
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'PLAN_UPDATED',
+      resourceType: 'SUBSCRIPTION_PLAN',
+      resourceId: plan.id,
+      metadata: {
+        admin: user.email,
+        planName: plan.name,
+        price: plan.price,
+        duration: `${plan.duration} ${plan.duration_unit}`,
+        oldDuration
+      },
+      req
+    });
+
+    return res.json({ success: true, plan, message: `Plan "${plan.name}" updated successfully.` });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
-apiRouter.delete('/admin/subscription/plans/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+// 4. Toggle plan status (Enable / Disable)
+apiRouter.patch('/admin/subscription/plans/:id/status', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN') {
-      return res.status(403).json({ success: false, error: 'Only Owner can disable subscription plans.' });
-    }
+    const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
 
     const { id } = req.params;
     const plan = db.subscription_plans.find(p => p.id === id);
     if (!plan) return res.status(404).json({ success: false, error: 'Plan not found.' });
 
-    plan.status = 'DISABLED';
+    const newStatus = (req.body.status || (plan.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE')) as 'ACTIVE' | 'INACTIVE';
+    plan.status = newStatus;
+    plan.active = newStatus === 'ACTIVE';
     plan.updated_at = new Date().toISOString();
     db.saveImmediately();
-    return res.json({ success: true, message: 'Plan disabled.' });
+
+    const auditAction = newStatus === 'ACTIVE' ? 'PLAN_ENABLED' : 'PLAN_DISABLED';
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: auditAction,
+      resourceType: 'SUBSCRIPTION_PLAN',
+      resourceId: plan.id,
+      metadata: { admin: user.email, planName: plan.name, newStatus },
+      req
+    });
+
+    return res.json({ success: true, plan, message: `Plan "${plan.name}" is now ${newStatus}.` });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Manual Subscription Grant (Owner/Admin)
+// 5. Delete plan with safety archive check (Requirement 7)
+apiRouter.delete('/admin/subscription/plans/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+    const { id } = req.params;
+    const planIndex = db.subscription_plans.findIndex(p => p.id === id);
+    if (planIndex === -1) return res.status(404).json({ success: false, error: 'Plan not found.' });
+
+    const plan = db.subscription_plans[planIndex];
+
+    // Check historical transactions/orders/subscriptions
+    const hasHistory = (db.subscriptions || []).some(s => s.plan_id === id) ||
+                       (db.orders || []).some(o => o.product_id === id) ||
+                       (db.payments || []).some(p => p.plan_id === id);
+
+    if (hasHistory) {
+      // Archive plan to preserve financial and customer history
+      plan.status = 'ARCHIVED';
+      plan.active = false;
+      plan.updated_at = new Date().toISOString();
+      db.saveImmediately();
+
+      logAudit({
+        userId: user.id,
+        userEmail: user.email,
+        action: 'PLAN_ARCHIVED',
+        resourceType: 'SUBSCRIPTION_PLAN',
+        resourceId: plan.id,
+        metadata: {
+          admin: user.email,
+          planName: plan.name,
+          reason: 'Safely archived because plan contains historical orders/subscriptions'
+        },
+        req
+      });
+
+      return res.json({
+        success: true,
+        archived: true,
+        message: `Plan "${plan.name}" has historical subscriptions. It has been safely ARCHIVED instead of destroyed.`
+      });
+    } else {
+      // No historical subscriptions, safe to permanently delete
+      db.subscription_plans.splice(planIndex, 1);
+      db.saveImmediately();
+
+      logAudit({
+        userId: user.id,
+        userEmail: user.email,
+        action: 'PLAN_DELETED',
+        resourceType: 'SUBSCRIPTION_PLAN',
+        resourceId: id,
+        metadata: { admin: user.email, planName: plan.name },
+        req
+      });
+
+      return res.json({
+        success: true,
+        deleted: true,
+        message: `Plan "${plan.name}" permanently deleted.`
+      });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. Get Subscribers CRM List
+apiRouter.get('/admin/subscription/subscribers', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+  if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+  const subscribers = (db.subscriptions || []).map(sub => {
+    const targetUser = db.users.find(u => u.id === sub.user_id);
+    const plan = db.subscription_plans.find(p => p.id === sub.plan_id);
+
+    return {
+      ...sub,
+      user_email: targetUser ? targetUser.email : (sub.user_email || 'unknown'),
+      user_name: targetUser ? (targetUser.full_name || targetUser.username || targetUser.email) : (sub.user_name || 'Customer'),
+      user_role: targetUser ? targetUser.role : 'USER',
+      plan_name: plan ? plan.name : (sub.plan_name || 'Custom Plan'),
+      plan_currency: plan ? plan.currency : sub.currency,
+      plan_duration: plan ? `${plan.duration} ${plan.duration_unit}` : 'Custom'
+    };
+  });
+
+  return res.json({ success: true, subscribers });
+});
+
+// 7. Manual Subscription Grant (Owner/Admin)
 apiRouter.post('/admin/subscription/grant-manual', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'OWNER' && user.role !== 'SUPER ADMIN' && user.role !== 'ADMIN') {
-      return res.status(403).json({ success: false, error: 'Unauthorized.' });
-    }
+    const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
 
-    const { targetUserId, planId, durationDays, notes } = req.body;
+    const { targetUserId, planId, duration, duration_unit, notes } = req.body;
     const targetUser = db.users.find(u => u.id === targetUserId || u.email === targetUserId || u.username === targetUserId);
     if (!targetUser) return res.status(404).json({ success: false, error: 'Target user not found.' });
 
-    const plan = db.subscription_plans.find(p => p.id === planId) || db.subscription_plans[0];
-    const days = durationDays ? Number(durationDays) : 30;
-    const now = new Date();
-    const expiryDate = new Date(now.getTime() + days * 86400000).toISOString();
+    const plan: SubscriptionPlan = db.subscription_plans.find(p => p.id === planId) || db.subscription_plans[0] || {
+      id: 'custom-grant',
+      name: 'Custom VIP Grant',
+      duration: 30,
+      duration_unit: 'DAYS',
+      price: 0,
+      currency: 'INR',
+      features: ['Bot Visual Editor', 'Priority Support'],
+      status: 'ACTIVE',
+      created_at: new Date().toISOString()
+    };
 
-    let sub = db.subscriptions.find(s => s.user_id === targetUser.id && s.status === 'ACTIVE');
+    const durVal = duration ? Number(duration) : (plan.duration || 30);
+    const durUnit = (duration_unit || plan.duration_unit || 'DAYS').toUpperCase();
+    const now = new Date();
+    const expiryDate = PaymentService.calculatePlanExpiryDate(now, durVal, durUnit).toISOString();
+
+    let sub = db.subscriptions.find(s => s.user_id === targetUser.id && (s.status === 'ACTIVE' || s.status === 'MANUAL_GRANT'));
     if (sub) {
-      sub.plan_id = plan ? plan.id : sub.plan_id;
-      sub.expiry_date = expiryDate;
+      const currentExpiry = new Date(sub.expiry_date);
+      const baseDate = currentExpiry > now ? currentExpiry : now;
+      const newExpiry = PaymentService.calculatePlanExpiryDate(baseDate, durVal, durUnit).toISOString();
+
+      sub.plan_id = plan.id;
+      sub.plan_name = plan.name;
+      sub.expiry_date = newExpiry;
+      sub.is_manual = true;
+      sub.granted_by = user.email;
+      sub.notes = notes || sub.notes;
+      sub.status = 'ACTIVE';
       sub.updated_at = now.toISOString();
     } else {
       sub = {
-        id: `sub-grant-${Date.now()}`,
+        id: `sub-grant-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         user_id: targetUser.id,
-        plan_id: plan ? plan.id : 'plan-monthly',
-        billing_cycle: 'MONTHLY',
+        user_email: targetUser.email,
+        user_name: targetUser.full_name || targetUser.username,
+        plan_id: plan.id,
+        plan_name: plan.name,
+        billing_cycle: 'CUSTOM',
         amount: 0,
-        currency: 'INR',
+        currency: plan.currency || 'INR',
         status: 'ACTIVE',
         start_date: now.toISOString(),
         expiry_date: expiryDate,
         auto_renew: false,
         payment_id: `manual_grant_by_${user.id}`,
+        order_id: `MANUAL-${Date.now()}`,
+        is_manual: true,
+        granted_by: user.email,
+        notes: notes || 'Manual grant by administrator',
         created_at: now.toISOString(),
         updated_at: now.toISOString()
       };
@@ -1706,30 +2420,170 @@ apiRouter.post('/admin/subscription/grant-manual', authenticate, async (req: Aut
     }
 
     db.notifications.unshift({
-      id: `notif-${Date.now()}`,
+      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       user_id: targetUser.id,
       title: '💎 Premium Granted by Admin',
-      message: `You have been granted ${days} days of premium bot editor access.`,
+      message: `You have been granted ${durVal} ${durUnit} of premium bot editor access by ${user.full_name || user.email}.`,
       type: 'SUCCESS',
       is_read: false,
       created_at: now.toISOString()
     });
 
     db.saveImmediately();
+
     logAudit({
       userId: user.id,
       userEmail: user.email,
-      action: 'SUBSCRIPTION_MANUAL_GRANT',
+      action: 'SUBSCRIPTION_GRANTED',
       resourceType: 'SUBSCRIPTION',
       resourceId: targetUser.id,
-      metadata: { targetUser: targetUser.email, days, notes },
+      metadata: {
+        admin: user.email,
+        targetUser: targetUser.email,
+        planName: plan.name,
+        duration: `${durVal} ${durUnit}`,
+        expiryDate: sub.expiry_date,
+        notes
+      },
       req
     });
 
-    return res.json({ success: true, subscription: sub, message: `Granted ${days} days of premium to ${targetUser.email}` });
+    return res.json({
+      success: true,
+      subscription: sub,
+      message: `Successfully granted ${durVal} ${durUnit} of premium access to ${targetUser.email}.`
+    });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// 8. Extend subscription
+apiRouter.post('/admin/subscription/extend', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+    const { subscriptionId, userId, daysToAdd } = req.body;
+    const sub = db.subscriptions.find(s => (subscriptionId && s.id === subscriptionId) || (userId && s.user_id === userId));
+    if (!sub) return res.status(404).json({ success: false, error: 'Subscription record not found.' });
+
+    const days = Number(daysToAdd) || 30;
+    const now = new Date();
+    const currentExpiry = new Date(sub.expiry_date);
+    const baseDate = currentExpiry > now ? currentExpiry : now;
+    const newExpiry = new Date(baseDate.getTime() + days * 86400000).toISOString();
+
+    sub.expiry_date = newExpiry;
+    sub.status = 'ACTIVE';
+    sub.updated_at = now.toISOString();
+    db.saveImmediately();
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'SUBSCRIPTION_EXTENDED',
+      resourceType: 'SUBSCRIPTION',
+      resourceId: sub.id,
+      metadata: { admin: user.email, userId: sub.user_id, daysAdded: days, newExpiry },
+      req
+    });
+
+    return res.json({ success: true, subscription: sub, message: `Subscription extended by ${days} days.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9. Cancel subscription
+apiRouter.post('/admin/subscription/cancel', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+    const { subscriptionId, userId, reason } = req.body;
+    const sub = db.subscriptions.find(s => (subscriptionId && s.id === subscriptionId) || (userId && s.user_id === userId));
+    if (!sub) return res.status(404).json({ success: false, error: 'Subscription record not found.' });
+
+    sub.status = 'CANCELLED';
+    sub.auto_renew = false;
+    sub.updated_at = new Date().toISOString();
+    db.saveImmediately();
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'SUBSCRIPTION_CANCELLED',
+      resourceType: 'SUBSCRIPTION',
+      resourceId: sub.id,
+      metadata: { admin: user.email, userId: sub.user_id, reason },
+      req
+    });
+
+    return res.json({ success: true, subscription: sub, message: 'Subscription successfully cancelled.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 10. Subscription Settings
+apiRouter.get('/admin/subscription/settings', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+  if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+  return res.json({ success: true, settings: db.subscription_settings });
+});
+
+apiRouter.put('/admin/subscription/settings', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+    const current = db.subscription_settings;
+    const updated = {
+      ...current,
+      ...req.body,
+      id: current.id,
+      updated_at: new Date().toISOString()
+    };
+
+    db.subscription_settings = updated;
+    db.saveImmediately();
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'SUBSCRIPTION_SETTINGS_UPDATED',
+      resourceType: 'SYSTEM_SETTINGS',
+      resourceId: 'subscription_settings',
+      metadata: { admin: user.email, updatedSettings: req.body },
+      req
+    });
+
+    return res.json({ success: true, settings: updated, message: 'Subscription settings updated successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 11. Subscription Specific Audit Logs
+apiRouter.get('/admin/subscription/audit-logs', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isAuthorized = user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+  if (!isAuthorized) return res.status(403).json({ success: false, error: 'Unauthorized.' });
+
+  const logs = (db.audit_logs || []).filter(
+    l => l.resource_type === 'SUBSCRIPTION' ||
+         l.resource_type === 'SUBSCRIPTION_PLAN' ||
+         l.action.startsWith('PLAN_') ||
+         l.action.startsWith('SUBSCRIPTION_')
+  ).slice(0, 100);
+
+  return res.json({ success: true, logs });
 });
 
 // Generic Webhook Ingress (Razorpay, Cashfree, PhonePe, UPI)

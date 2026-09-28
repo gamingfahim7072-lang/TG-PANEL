@@ -15,7 +15,9 @@ import {
   Server,
   Sparkles,
   Zap,
-  ExternalLink
+  ExternalLink,
+  Crown,
+  Wallet
 } from 'lucide-react';
 import { User, Subscription } from '../types';
 
@@ -36,10 +38,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenConnectBot,
   onOpenCheckout
 }) => {
-  const isAdmin = user.role === 'ADMIN' || user.role === 'SUPER ADMIN';
+  const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN' || user.role === 'SUPER ADMIN';
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: null },
+    { id: 'fz-pay', label: 'FZ PAY Wallet', icon: Wallet, badge: 'PAY' },
     { id: 'bots', label: 'Connected Bots', icon: Bot, badge: null },
     { id: 'editor', label: 'Bot Visual Editor', icon: Sliders, badge: 'PRO' },
     { id: 'products', label: 'Products & Licenses', icon: Package, badge: null },
@@ -49,8 +52,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'coupons', label: 'Coupons & Promos', icon: Tag, badge: null },
     { id: 'resellers', label: 'Reseller & Referrals', icon: Share2, badge: 'EARN' },
     { id: 'billing', label: 'Billing & Plans', icon: CreditCard, badge: null },
+    ...(isOwnerOrAdmin ? [{ id: 'subscriptions', label: 'Subscription Manager', icon: Crown, badge: 'VIP' }] : []),
     { id: 'hosting', label: '24/7 Cloud Hosting', icon: Server, badge: '24/7' },
-    ...(isAdmin ? [{ id: 'admin', label: 'Admin Console', icon: ShieldCheck, badge: 'ROOT' }] : []),
+    ...(isOwnerOrAdmin ? [{ id: 'admin', label: 'Admin Console', icon: ShieldCheck, badge: 'ROOT' }] : []),
     { id: 'settings', label: 'Settings & Security', icon: Settings, badge: null }
   ];
 

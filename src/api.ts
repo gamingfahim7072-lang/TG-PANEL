@@ -2,6 +2,7 @@ import {
   User,
   SubscriptionPlan,
   Subscription,
+  SubscriptionSettings,
   TelegramBot,
   BotSettings,
   BotMenu,
@@ -28,7 +29,9 @@ import {
   PollerStats,
   SystemHostingStatus,
   SelfPingState,
-  PingTestResult
+  PingTestResult,
+  Wallet,
+  WalletTransaction
 } from './types';
 
 const API_BASE = '/api';
@@ -148,6 +151,37 @@ class ApiClient {
     return res;
   }
 
+  public async getAdminStatus() {
+    return this.request<{
+      success: boolean;
+      hasAdmin: boolean;
+      adminCount: number;
+      defaultEmail: string;
+      accounts: Array<{ email: string; role: string; username?: string; full_name: string }>;
+    }>(`/auth/admin-status`);
+  }
+
+  public async ownerResetWithOtp(payload: { email: string; code: string; new_password: string }) {
+    const res = await this.request<{ success: boolean; message: string; token: string; user: User }>(`/auth/owner-reset-with-otp`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    if (res.token) this.setToken(res.token);
+    return res;
+  }
+
+  public async updateAdminCredentials(payload: {
+    current_password?: string;
+    new_email?: string;
+    new_password?: string;
+    new_username?: string;
+  }) {
+    return this.request<{ success: boolean; message: string; user: User }>(`/admin/update-credentials`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
   public async register(payload: { email: string; password: string; full_name: string; referral_code?: string }) {
     const res = await this.request<{ success: boolean; token: string; user: User }>(`/auth/register`, {
       method: 'POST',
@@ -177,6 +211,190 @@ class ApiClient {
 
   public async changePassword(payload: { current_password: string; new_password: string }) {
     return this.request<{ success: boolean; message: string }>(`/auth/change-password`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  // ==========================================
+  // FZ PAY INTERNAL WALLET METHODS
+  // ==========================================
+  public async getWalletDashboard() {
+    return this.request<{
+      success: boolean;
+      wallet: Wallet;
+      transactions: WalletTransaction[];
+      botSales: {
+        todaySales: number;
+        totalSales: number;
+        successfulOrders: number;
+        failedOrders: number;
+        pendingPayments: number;
+        totalAmountReceived: number;
+        orders: Order[];
+      };
+      purchases: Order[];
+      withdrawals: any[];
+      subscriptions: Subscription[];
+    }>(`/wallet/my`);
+  }
+
+  public async createWallet() {
+    return this.request<{ success: boolean; message: string; wallet: Wallet }>(`/wallet/create`, {
+      method: 'POST'
+    });
+  }
+
+  public async getWalletTransactions(query?: { type?: string; status?: string }) {
+    const params = new URLSearchParams();
+    if (query?.type) params.set('type', query.type);
+    if (query?.status) params.set('status', query.status);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<{ success: boolean; transactions: WalletTransaction[] }>(`/wallet/transactions${qs}`);
+  }
+
+  public async addMoney(payload: { amount: number; provider?: string }) {
+    return this.request<{
+      success: boolean;
+      orderId: string;
+      paymentId: string;
+      amount: number;
+      currency: string;
+      status: string;
+      paymentUri?: string;
+      qrImageUrl?: string;
+      upiDetails?: any;
+      instructions?: string;
+    }>(`/wallet/add-money`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async verifyDeposit(payload: { paymentId?: string; orderId?: string; transactionId?: string; provider?: string }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      wallet: Wallet;
+      transaction: WalletTransaction;
+      payment: any;
+    }>(`/wallet/verify-deposit`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async payPremiumWithWallet(payload: { planId: string; billingCycle?: 'MONTHLY' | 'YEARLY' }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      subscription: Subscription;
+      wallet: Wallet;
+      transaction: WalletTransaction;
+      error?: string;
+      code?: string;
+      required?: number;
+      currentBalance?: number;
+      shortfall?: number;
+    }>(`/wallet/pay-premium`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async paySubscriptionWithWallet(payload: { planId: string; billingCycle?: 'MONTHLY' | 'YEARLY' }) {
+    return this.payPremiumWithWallet(payload);
+  }
+
+  public async payProductWithWallet(payload: { productId: string; packageId?: string }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      order?: Order;
+      key?: string;
+      wallet?: Wallet;
+      error?: string;
+      code?: string;
+      required?: number;
+      currentBalance?: number;
+      shortfall?: number;
+    }>(`/wallet/pay-product`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async sendMoney(payload: { recipientWalletId: string; amount: number; note?: string }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      transferRef: string;
+      senderWallet: Wallet;
+      transaction: WalletTransaction;
+    }>(`/wallet/send`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async withdrawMoney(payload: {
+    amount: number;
+    method: 'UPI' | 'BANK_TRANSFER';
+    upiId?: string;
+    bankName?: string;
+    accountNumber?: string;
+    ifsc?: string;
+    notes?: string;
+  }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      withdrawal: any;
+      wallet: Wallet;
+    }>(`/wallet/withdraw`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async getBotSales() {
+    return this.request<{
+      success: boolean;
+      todaySales: number;
+      totalSales: number;
+      successfulOrders: number;
+      failedOrders: number;
+      pendingPayments: number;
+      totalAmountReceived: number;
+      orders: Order[];
+    }>(`/wallet/bot-sales`);
+  }
+
+  public async getMyPurchases() {
+    return this.request<{ success: boolean; purchases: Order[] }>(`/wallet/my-purchases`);
+  }
+
+  public async getAdminFzPayOverview() {
+    return this.request<{
+      success: boolean;
+      totalWallets: number;
+      totalSystemBalance: number;
+      totalPendingPayouts: number;
+      wallets: any[];
+      transactions: WalletTransaction[];
+      withdrawals: any[];
+    }>(`/admin/fz-pay/overview`);
+  }
+
+  public async adminProcessWithdrawal(id: string, payload: { action: 'APPROVE' | 'REJECT'; referenceId?: string; adminNotes?: string }) {
+    return this.request<{ success: boolean; message: string; withdrawal: any; wallet: Wallet }>(`/admin/fz-pay/withdrawals/${id}`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async adminAdjustWallet(payload: { walletId: string; amount: number; type: 'CREDIT' | 'DEBIT'; reason: string }) {
+    return this.request<{ success: boolean; message: string; wallet: Wallet; transaction: WalletTransaction }>(`/admin/fz-pay/adjust`, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
@@ -914,7 +1132,7 @@ class ApiClient {
   // ==========================================
 
   public async getAdminSubscriptionPlans() {
-    return this.request<{ success: boolean; plans: SubscriptionPlan[] }>(`/admin/subscription/plans`);
+    return this.request<{ success: boolean; plans: SubscriptionPlan[]; settings?: SubscriptionSettings }>(`/admin/subscription/plans`);
   }
 
   public async createAdminSubscriptionPlan(payload: any) {
@@ -937,11 +1155,51 @@ class ApiClient {
     });
   }
 
-  public async grantManualSubscription(payload: { targetUserId: string; planId?: string; durationDays?: number; notes?: string }) {
+  public async toggleAdminSubscriptionPlanStatus(id: string, status?: 'ACTIVE' | 'INACTIVE') {
+    return this.request<{ success: boolean; plan: SubscriptionPlan; message: string }>(`/admin/subscription/plans/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status })
+    });
+  }
+
+  public async getAdminSubscribers() {
+    return this.request<{ success: boolean; subscribers: Subscription[] }>(`/admin/subscription/subscribers`);
+  }
+
+  public async grantManualSubscription(payload: { targetUserId: string; planId?: string; duration?: number; duration_unit?: string; notes?: string }) {
     return this.request<{ success: boolean; subscription: Subscription; message: string }>(`/admin/subscription/grant-manual`, {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  }
+
+  public async extendSubscription(payload: { subscriptionId?: string; userId?: string; daysToAdd: number }) {
+    return this.request<{ success: boolean; subscription: Subscription; message: string }>(`/admin/subscription/extend`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async cancelSubscription(payload: { subscriptionId?: string; userId?: string; reason?: string }) {
+    return this.request<{ success: boolean; subscription: Subscription; message: string }>(`/admin/subscription/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async getSubscriptionSettings() {
+    return this.request<{ success: boolean; settings: SubscriptionSettings }>(`/admin/subscription/settings`);
+  }
+
+  public async updateSubscriptionSettings(payload: Partial<SubscriptionSettings>) {
+    return this.request<{ success: boolean; settings: SubscriptionSettings; message: string }>(`/admin/subscription/settings`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async getSubscriptionAuditLogs() {
+    return this.request<{ success: boolean; logs: any[] }>(`/admin/subscription/audit-logs`);
   }
 }
 

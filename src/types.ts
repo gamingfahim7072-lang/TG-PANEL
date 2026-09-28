@@ -18,22 +18,37 @@ export interface SubscriptionPlan {
   name: string;
   plan_id?: string;
   duration?: number;
-  duration_unit?: 'DAYS' | 'MONTHS' | 'YEARS';
-  price?: number;
-  price_monthly: number;
-  price_yearly: number;
+  duration_unit?: 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS';
+  price: number;
+  price_monthly?: number;
+  price_yearly?: number;
   currency: string;
   description?: string;
   features: string[];
-  max_bots: number;
-  max_products: number;
-  max_broadcasts_per_month: number;
-  status: 'ACTIVE' | 'ARCHIVED' | 'DISABLED';
+  max_bots?: number;
+  max_products?: number;
+  max_broadcasts_per_month?: number;
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'DISABLED';
   active?: boolean;
   display_order?: number;
   is_popular?: boolean;
+  subscriber_count?: number;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface SubscriptionSettings {
+  id: string;
+  is_enabled: boolean;
+  allow_monthly_plans: boolean;
+  allow_yearly_plans: boolean;
+  default_currency: string;
+  default_plan_id?: string;
+  require_payment: boolean;
+  grace_period_days: number;
+  auto_renewal_enabled: boolean;
+  customer_page_visible: boolean;
+  updated_at: string;
 }
 
 export interface PaymentBankSettings {
@@ -46,6 +61,38 @@ export interface PaymentBankSettings {
   auto_approval_threshold: number;
   disclaimer: string;
   updated_at: string;
+}
+
+export interface Wallet {
+  id: string; // e.g. "FZ-WAL-982104"
+  owner_user_id: string;
+  balance: number;
+  pending_balance: number;
+  currency: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+  total_received: number;
+  total_spent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WalletTransaction {
+  id: string; // e.g. "WTX-..."
+  wallet_id: string;
+  user_id: string;
+  type: 'DEPOSIT' | 'WITHDRAW' | 'SEND' | 'RECEIVE' | 'PREMIUM_PURCHASE' | 'BOT_PRODUCT_PURCHASE' | 'REFUND' | 'ADJUSTMENT';
+  amount: number;
+  currency: string;
+  balance_before: number;
+  balance_after: number;
+  reference_id?: string;
+  order_id?: string;
+  payment_id?: string;
+  description: string;
+  status: 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+  metadata?: any;
+  created_at: string;
+  completed_at?: string;
 }
 
 export interface LedgerTransaction {
@@ -148,15 +195,24 @@ export interface UpiConfig {
 export interface Subscription {
   id: string;
   user_id: string;
+  user_email?: string;
+  user_name?: string;
   plan_id: string;
-  billing_cycle: 'MONTHLY' | 'YEARLY';
+  plan_name?: string;
+  billing_cycle: 'MONTHLY' | 'YEARLY' | 'CUSTOM' | string;
   amount: number;
   currency: string;
-  status: 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'SUSPENDED';
+  status: 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'SUSPENDED' | 'MANUAL_GRANT';
   start_date: string;
   expiry_date: string;
   auto_renew: boolean;
   payment_id?: string;
+  order_id?: string;
+  is_manual?: boolean;
+  granted_by?: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
   plan?: SubscriptionPlan;
 }
 

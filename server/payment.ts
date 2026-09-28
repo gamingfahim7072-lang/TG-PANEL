@@ -471,6 +471,25 @@ export class PaymentService {
   }
 
   /**
+   * Helper to calculate accurate expiry date from duration value and unit
+   */
+  public static calculatePlanExpiryDate(baseDate: Date, duration: number, unit?: string): Date {
+    const d = new Date(baseDate.getTime());
+    const u = (unit || 'DAYS').toUpperCase();
+    const dur = Number(duration) || 30;
+    if (u === 'YEARS' || u === 'YEAR') {
+      d.setFullYear(d.getFullYear() + dur);
+    } else if (u === 'MONTHS' || u === 'MONTH') {
+      d.setMonth(d.getMonth() + dur);
+    } else if (u === 'WEEKS' || u === 'WEEK') {
+      d.setDate(d.getDate() + dur * 7);
+    } else {
+      d.setDate(d.getDate() + dur);
+    }
+    return d;
+  }
+
+  /**
    * Creates an order and payment intent for SUBSCRIPTION plan.
    * Price is retrieved STRICTLY from server-side database plan.
    */
@@ -489,13 +508,18 @@ export class PaymentService {
     gatewayConfig?: any;
     error?: string;
   } {
+    if (db.subscription_settings && !db.subscription_settings.is_enabled) {
+      return { success: false, error: 'Subscription system is temporarily disabled by administrator.' };
+    }
+
     const plan = db.subscription_plans.find(p => (p.id === params.planId || p.plan_id === params.planId) && p.status === 'ACTIVE');
     if (!plan) {
       return { success: false, error: 'Subscription plan not found or inactive.' };
     }
 
-    const billingCycle = params.billingCycle || (plan.id === 'plan-yearly' ? 'YEARLY' : 'MONTHLY');
-    const amount = billingCycle === 'YEARLY' ? (plan.price_yearly || plan.price || 2499) : (plan.price_monthly || plan.price || 299);
+    const billingCycle = params.billingCycle || (plan.duration_unit === 'YEARS' || (plan.duration && plan.duration >= 365) ? 'YEARLY' : 'MONTHLY');
+    // Prefer explicitly set plan.price, fallback to billing cycle price or default
+    const amount = Number(plan.price !== undefined ? plan.price : (billingCycle === 'YEARLY' ? plan.price_yearly : plan.price_monthly) || 299);
     const orderId = `SUB-ORD-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
     const nowStr = new Date().toISOString();
     const provider = params.provider || 'UPI';
@@ -508,7 +532,7 @@ export class PaymentService {
       customer_name: params.user.full_name || params.user.email,
       customer_telegram_id: params.user.telegram_id || params.user.username || 'web',
       product_id: plan.id,
-      product_name: `${plan.name} (${billingCycle})`,
+      product_name: `${plan.name} (${plan.duration} ${plan.duration_unit || 'DAYS'})`,
       quantity: 1,
       unit_price: amount,
       total_amount: amount,
@@ -517,7 +541,7 @@ export class PaymentService {
       order_type: 'SUBSCRIPTION',
       payment_provider: provider,
       delivered_type: 'CUSTOM_MESSAGE',
-      delivered_content: `Subscription: ${plan.name}`,
+      delivered_content: `Subscription: ${plan.name} (${plan.duration} ${plan.duration_unit || 'DAYS'})`,
       created_at: nowStr,
       updated_at: nowStr
     };
@@ -538,6 +562,9 @@ export class PaymentService {
       metadata: {
         userEmail: params.user.email,
         planName: plan.name,
+        planDuration: plan.duration,
+        planDurationUnit: plan.duration_unit || 'DAYS',
+        planPriceSnapshot: amount,
         initiatedAt: nowStr
       },
       created_at: nowStr,
@@ -592,7 +619,7 @@ export class PaymentService {
 
     // Idempotency: If already SUCCESS, return existing active subscription
     if (payment.status === 'SUCCESS') {
-      const existingSub = db.subscriptions.find(s => s.payment_id === payment.id || s.user_id === payment.user_id && s.status === 'ACTIVE');
+      const existingSub = db.subscriptions.find(s => s.payment_id === payment.id || (s.user_id === payment.user_id && s.status === 'ACTIVE'));
       return { success: true, subscription: existingSub };
     }
 
@@ -614,8 +641,9 @@ export class PaymentService {
 
     const now = new Date();
     const plan = db.subscription_plans.find(p => p.id === payment.plan_id);
-    const durationDays = plan?.duration || (payment.billing_cycle === 'YEARLY' ? 365 : 30);
-    const expiryDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+    const planDuration = plan?.duration || (payment.billing_cycle === 'YEARLY' ? 365 : 30);
+    const planDurationUnit = plan?.duration_unit || (payment.billing_cycle === 'YEARLY' ? 'YEARS' : 'DAYS');
+    const expiryDate = this.calculatePlanExpiryDate(now, planDuration, planDurationUnit).toISOString();
     const transactionId = params.transactionId || params.gatewayPaymentId || `TXN-SUB-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
     // Duplicate transaction check
@@ -643,24 +671,32 @@ export class PaymentService {
       order.updated_at = now.toISOString();
     }
 
-    // Activate or Extend Subscription
-    let sub = db.subscriptions.find(s => s.user_id === payment.user_id && s.status === 'ACTIVE');
+    // Activate or Extend Subscription with snapshot
+    let sub = db.subscriptions.find(s => s.user_id === payment.user_id && (s.status === 'ACTIVE' || s.status === 'MANUAL_GRANT'));
     if (sub) {
       const currentExpiry = new Date(sub.expiry_date);
-      const newExpiry = currentExpiry > now
-        ? new Date(currentExpiry.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString()
-        : expiryDate;
+      const baseDate = currentExpiry > now ? currentExpiry : now;
+      const newExpiry = this.calculatePlanExpiryDate(baseDate, planDuration, planDurationUnit).toISOString();
+
       sub.plan_id = payment.plan_id || sub.plan_id;
+      sub.plan_name = plan ? plan.name : (sub.plan_name || 'Premium Plan');
       sub.billing_cycle = payment.billing_cycle || sub.billing_cycle;
       sub.amount = payment.amount;
+      sub.currency = payment.currency || 'INR';
       sub.expiry_date = newExpiry;
       sub.payment_id = payment.id;
+      sub.order_id = payment.order_id;
+      sub.status = 'ACTIVE';
+      sub.is_manual = false;
       sub.updated_at = now.toISOString();
     } else {
       sub = {
         id: `sub-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         user_id: payment.user_id,
+        user_email: payment.metadata?.userEmail,
+        user_name: order?.customer_name,
         plan_id: payment.plan_id || 'plan-monthly',
+        plan_name: plan ? plan.name : 'Monthly Pro',
         billing_cycle: payment.billing_cycle || 'MONTHLY',
         amount: payment.amount,
         currency: payment.currency,
@@ -669,6 +705,8 @@ export class PaymentService {
         expiry_date: expiryDate,
         auto_renew: true,
         payment_id: payment.id,
+        order_id: payment.order_id,
+        is_manual: false,
         created_at: now.toISOString(),
         updated_at: now.toISOString()
       };
@@ -689,7 +727,7 @@ export class PaymentService {
       plan_name: payment.metadata?.planName || plan?.name || 'Premium Plan',
       status: 'CREDITED',
       description: `Verified Subscription Payment: ${plan?.name || 'Pro'} (${payment.order_id})`,
-      metadata: { planId: payment.plan_id, durationDays, billingCycle: payment.billing_cycle }
+      metadata: { planId: payment.plan_id, duration: planDuration, durationUnit: planDurationUnit, billingCycle: payment.billing_cycle }
     });
 
     // Notify User
@@ -697,7 +735,7 @@ export class PaymentService {
       id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       user_id: payment.user_id,
       title: '💎 Premium Subscription Active!',
-      message: `Your payment was verified. Bot visual editor & automation flows are now unlocked for ${durationDays} days.`,
+      message: `Your payment was verified. Bot visual editor & automation flows are now unlocked for ${planDuration} ${planDurationUnit}.`,
       type: 'SUCCESS',
       is_read: false,
       created_at: now.toISOString()

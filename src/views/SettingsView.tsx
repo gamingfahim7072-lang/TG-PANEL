@@ -25,6 +25,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Admin Master Credentials State
+  const isAdminOrOwner = ['ADMIN', 'OWNER', 'SUPER ADMIN'].includes((user.role || '').toUpperCase());
+  const [adminEmail, setAdminEmail] = useState(user.email || '');
+  const [adminUsername, setAdminUsername] = useState(user.username || '');
+  const [adminCurrentPass, setAdminCurrentPass] = useState('');
+  const [adminNewPass, setAdminNewPass] = useState('');
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [adminSuccess, setAdminSuccess] = useState<string | null>(null);
+
+  const handleUpdateAdminCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminLoading(true);
+    setAdminError(null);
+    setAdminSuccess(null);
+
+    try {
+      const res = await api.updateAdminCredentials({
+        current_password: adminCurrentPass || undefined,
+        new_email: adminEmail !== user.email ? adminEmail : undefined,
+        new_username: adminUsername !== user.username ? adminUsername : undefined,
+        new_password: adminNewPass || undefined
+      });
+      setAdminSuccess(res.message || 'Administrator credentials updated successfully.');
+      setAdminCurrentPass('');
+      setAdminNewPass('');
+    } catch (err: any) {
+      setAdminError(err.message || 'Failed to update administrator credentials.');
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
@@ -173,6 +206,100 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user }) => {
           </form>
         </div>
       </div>
+
+      {/* Administrator & Owner Master Credentials Panel */}
+      {isAdminOrOwner && (
+        <div className="bg-[#0f172a] border border-amber-500/30 rounded-2xl p-6 space-y-4 shadow-xl shadow-amber-500/5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <Shield className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-white">Owner & Administrator Master Credentials</h2>
+                <p className="text-xs text-slate-400">Modify root administrator email, username, and master portal password</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20">
+              {user.role} PRIVILEGED
+            </span>
+          </div>
+
+          {adminError && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{adminError}</span>
+            </div>
+          )}
+
+          {adminSuccess && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center space-x-2">
+              <CheckCircle className="w-4 h-4 shrink-0" />
+              <span>{adminSuccess}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleUpdateAdminCredentials} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-300 block mb-1">Admin Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={adminEmail}
+                  onChange={e => setAdminEmail(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300 block mb-1">Admin Display Username</label>
+                <input
+                  type="text"
+                  required
+                  value={adminUsername}
+                  onChange={e => setAdminUsername(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 outline-none font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-300 block mb-1">Current Password (Verification)</label>
+                <input
+                  type="password"
+                  value={adminCurrentPass}
+                  onChange={e => setAdminCurrentPass(e.target.value)}
+                  placeholder="Enter current password if changing credentials"
+                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300 block mb-1">New Master Admin Password</label>
+                <input
+                  type="password"
+                  value={adminNewPass}
+                  onChange={e => setAdminNewPass(e.target.value)}
+                  placeholder="Leave blank to keep existing password"
+                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={adminLoading}
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 cursor-pointer"
+              >
+                {adminLoading ? 'Saving Credentials...' : 'Save Administrator Credentials'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Platform Experience & PWA */}
       <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6 space-y-4">
