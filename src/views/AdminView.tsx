@@ -158,7 +158,7 @@ export const AdminView: React.FC = () => {
           <div className="bg-[#0f172a] border border-slate-800 p-5 rounded-2xl">
             <div className="text-xs text-slate-400 font-semibold">Total Platform GMV Revenue</div>
             <div className="text-2xl font-black text-emerald-400 mt-2">
-              ${stats.totalRevenue?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${(stats.totalRevenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
           <div className="bg-[#0f172a] border border-slate-800 p-5 rounded-2xl">

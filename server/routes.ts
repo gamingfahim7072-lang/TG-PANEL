@@ -51,6 +51,7 @@ import {
 } from './auth.js';
 import { TelegramService, TelegramPollingManager } from './telegram.js';
 import { PaymentService } from './payment.js';
+import { RealPaymentEngine } from './realPaymentEngine.js';
 import { WalletService } from './wallet.js';
 import { CronService } from './cron.js';
 
@@ -1618,6 +1619,61 @@ apiRouter.post('/payments/verify-key-payment', authenticate, rateLimit({ max: 20
     return res.json(result);
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// UNIVERSAL REAL PAYMENT VERIFICATION ENDPOINTS
+// POST /api/payments/:orderId/verify
+// POST /api/payments/verify
+// ==========================================
+apiRouter.post('/payments/:orderId/verify', authenticate, rateLimit({ max: 20, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const { paymentId, transactionId, gatewayPaymentId, signature, provider } = req.body;
+
+    const result = await RealPaymentEngine.verifyPaymentOrder({
+      orderId,
+      userId: req.user!.id,
+      transactionId,
+      gatewayPaymentId,
+      signature,
+      provider
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, status: 'FAILED', message: err.message });
+  }
+});
+
+apiRouter.post('/payments/verify', authenticate, rateLimit({ max: 20, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { orderId, paymentId, transactionId, gatewayPaymentId, signature, provider } = req.body;
+    const targetOrderId = orderId || paymentId;
+
+    if (!targetOrderId) {
+      return res.status(400).json({ success: false, status: 'FAILED', message: 'Order ID or Payment ID is required.' });
+    }
+
+    const result = await RealPaymentEngine.verifyPaymentOrder({
+      orderId: targetOrderId,
+      userId: req.user!.id,
+      transactionId,
+      gatewayPaymentId,
+      signature,
+      provider
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, status: 'FAILED', message: err.message });
   }
 });
 

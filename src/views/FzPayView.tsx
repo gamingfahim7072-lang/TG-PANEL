@@ -440,7 +440,7 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
               {Boolean(wallet?.pending_balance && wallet.pending_balance > 0) && (
                 <div className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold text-[11px]">
                   <Clock className="w-3.5 h-3.5" />
-                  <span>Pending: ₹{wallet.pending_balance.toLocaleString('en-IN')}</span>
+                  <span>Pending: ₹{(wallet?.pending_balance || 0).toLocaleString('en-IN')}</span>
                 </div>
               )}
 
@@ -665,10 +665,10 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
                       <div className={`text-xs sm:text-sm font-black font-mono ${
                         tx.status === 'FAILED' ? 'text-slate-500 line-through' : isCredit ? 'text-emerald-400' : 'text-slate-200'
                       }`}>
-                        {isCredit ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {isCredit ? '+' : '-'}₹{(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">
-                        Bal: ₹{tx.balance_after?.toLocaleString('en-IN')}
+                        Bal: ₹{(tx.balance_after || 0).toLocaleString('en-IN')}
                       </div>
                     </div>
                   </div>
@@ -688,12 +688,12 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4">
               <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Today's Sales</div>
-              <div className="text-xl font-black text-cyan-400">₹{botSales.todaySales.toLocaleString('en-IN')}</div>
+              <div className="text-xl font-black text-cyan-400">₹{(botSales?.todaySales || 0).toLocaleString('en-IN')}</div>
             </div>
 
             <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4">
               <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Lifetime Revenue</div>
-              <div className="text-xl font-black text-emerald-400">₹{botSales.totalSales.toLocaleString('en-IN')}</div>
+              <div className="text-xl font-black text-emerald-400">₹{(botSales?.totalSales || 0).toLocaleString('en-IN')}</div>
             </div>
 
             <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4">

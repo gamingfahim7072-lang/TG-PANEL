@@ -158,7 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <Wallet className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">FZ PAY</span>
           <span className="font-mono text-emerald-300 text-[11px] font-bold">
-            ₹{(user.wallet_balance || 0).toLocaleString()}
+            ₹{((user?.wallet_balance) || 0).toLocaleString()}
           </span>
         </button>
 

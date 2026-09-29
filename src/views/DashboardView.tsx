@@ -267,7 +267,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Wallet Balance</span>
             <div className="mt-1 flex items-baseline space-x-1">
               <span className="text-xl font-black text-emerald-400 font-mono">
-                ₹{(wallet?.balance ?? user.wallet_balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{(wallet?.balance ?? user?.wallet_balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
             <span className="text-[10px] text-emerald-500/80 font-semibold block mt-1">Available for Payout</span>
@@ -289,7 +289,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Sales</span>
             <div className="mt-1 flex items-baseline space-x-1">
               <span className="text-xl font-black text-cyan-400 font-mono">
-                ₹{(botSales.totalSales || wallet?.total_received || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{(botSales?.totalSales || wallet?.total_received || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
             <span className="text-[10px] text-cyan-400/80 font-semibold block mt-1">

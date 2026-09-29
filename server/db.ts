@@ -148,9 +148,9 @@ export interface Payment {
   user_id: string;
   amount: number;
   currency: string;
-  provider: 'RAZORPAY' | 'STRIPE' | 'CASHFREE' | 'PHONEPE' | 'MANUAL' | 'SANDBOX';
-  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
-  order_type?: 'PRODUCT_KEY' | 'SUBSCRIPTION';
+  provider: 'RAZORPAY' | 'STRIPE' | 'CASHFREE' | 'PHONEPE' | 'MANUAL' | 'SANDBOX' | 'UPI';
+  status: 'CREATED' | 'PENDING' | 'PROCESSING' | 'PAID' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'REFUNDED' | 'MANUAL_REVIEW';
+  order_type?: 'PRODUCT_KEY' | 'SUBSCRIPTION' | 'WALLET_DEPOSIT';
   transaction_id?: string;
   signature?: string;
   gateway_order_id?: string;
@@ -159,6 +159,36 @@ export interface Payment {
   billing_cycle?: 'MONTHLY' | 'YEARLY';
   metadata?: Record<string, any>;
   verified_at?: string;
+  expires_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookEvent {
+  id: string;
+  provider: 'RAZORPAY' | 'CASHFREE' | 'STRIPE' | 'PHONEPE' | 'UPI' | 'GENERIC';
+  event_id: string;
+  event_type: string;
+  payload: any;
+  processed: boolean;
+  order_id?: string;
+  payment_id?: string;
+  error?: string;
+  created_at: string;
+  processed_at?: string;
+}
+
+export interface KycVerification {
+  id: string;
+  user_id: string;
+  wallet_id?: string;
+  phone: string;
+  full_name: string;
+  document_type: string;
+  document_number?: string;
+  status: 'KYC_PENDING' | 'KYC_VERIFIED' | 'REJECTED';
+  verified_at?: string;
+  rejection_reason?: string;
   created_at: string;
   updated_at: string;
 }
@@ -181,7 +211,10 @@ export interface Wallet {
   balance: number;
   pending_balance: number;
   currency: string;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: 'NOT_CREATED' | 'KYC_PENDING' | 'KYC_VERIFIED' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
+  kyc_status?: 'NOT_SUBMITTED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+  phone?: string;
+  full_name?: string;
   total_received: number;
   total_spent: number;
   created_at: string;
@@ -875,6 +908,8 @@ export interface DatabaseSchema {
   subscription_settings?: SubscriptionSettings;
   wallets: Wallet[];
   wallet_transactions: WalletTransaction[];
+  webhook_events: WebhookEvent[];
+  kyc_verifications: KycVerification[];
 }
 
 export class Database {
@@ -959,6 +994,8 @@ export class Database {
     if (!result.refunds) result.refunds = [];
     if (!result.wallets) result.wallets = [];
     if (!result.wallet_transactions) result.wallet_transactions = [];
+    if (!result.webhook_events) result.webhook_events = [];
+    if (!result.kyc_verifications) result.kyc_verifications = [];
 
     // Ensure every existing user has an initialized FZ PAY wallet
     for (const u of result.users || []) {
@@ -1269,6 +1306,8 @@ export class Database {
       refunds: [],
       wallets: [],
       wallet_transactions: [],
+      webhook_events: [],
+      kyc_verifications: [],
       subscription_settings: {
         id: 'sub-settings-01',
         is_enabled: true,
@@ -1435,6 +1474,10 @@ export class Database {
   public set wallets(val: Wallet[]) { this.data.wallets = val; }
   public get wallet_transactions(): WalletTransaction[] { return this.data.wallet_transactions || []; }
   public set wallet_transactions(val: WalletTransaction[]) { this.data.wallet_transactions = val; }
+  public get webhook_events(): WebhookEvent[] { return this.data.webhook_events || []; }
+  public set webhook_events(val: WebhookEvent[]) { this.data.webhook_events = val; }
+  public get kyc_verifications(): KycVerification[] { return this.data.kyc_verifications || []; }
+  public set kyc_verifications(val: KycVerification[]) { this.data.kyc_verifications = val; }
 }
 
 export const db = new Database();

@@ -424,6 +424,29 @@ class ApiClient {
     });
   }
 
+  public async verifyPaymentOrder(orderId: string, payload?: { paymentId?: string; transactionId?: string; provider?: string; signature?: string; gatewayPaymentId?: string }) {
+    return this.request<{
+      success: boolean;
+      status: string;
+      message: string;
+      orderId?: string;
+      paymentId?: string;
+      transactionId?: string;
+      order?: any;
+      payment?: any;
+      subscription?: Subscription;
+      deliveredKey?: string;
+      wallet?: Wallet;
+    }>(`/payments/${orderId}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  }
+
+  public async createKeyOrder(payload: { productId: string; packageId?: string; provider?: string }) {
+    return this.buyProductKey(payload.productId, { packageId: payload.packageId, provider: payload.provider });
+  }
+
   public async getPaymentHistory() {
     return this.request<{ success: boolean; payments: any[] }>(`/subscription/payments-history`);
   }
