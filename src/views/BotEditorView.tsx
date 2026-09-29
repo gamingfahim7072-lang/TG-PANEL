@@ -1933,58 +1933,61 @@ export const BotEditorView: React.FC<BotEditorViewProps> = ({
             </div>
           )}
 
-          {/* Tab 4: Payments & Dynamic QR */}
+          {/* Tab 4: Payments & Dynamic QR (Centralized Official FZ PAY Architecture) */}
           {activeTab === 'PAYMENTS' && (
             <div className="p-6 space-y-5">
-              <div>
-                <h3 className="text-xs font-bold text-slate-200 mb-1">Direct Merchant UPI & Dynamic QR Codes</h3>
-                <p className="text-[11px] text-slate-400">
-                  Accept 0% commission direct UPI payments via GPay, PhonePe, Paytm, and BHIM with automatic QR code generation.
+              <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-start space-x-3">
+                <ShieldCheck className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-xs font-bold text-white flex items-center gap-2">
+                    <span>Centralized Official FZ PAY Payment Gateway Active</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold uppercase">
+                      SECURED & ENFORCED
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                    All Telegram bots created or connected through FZ Panel strictly use the centralized, official FZ PAY payment architecture. Custom personal UPI IDs, personal QR codes, and bypass toggles are strictly disabled to ensure financial security and automated settlement into your verified FZ PAY Wallet.
+                  </p>
+                </div>
+              </div>
+
+              {/* Readonly Official FZ PAY Parameters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Official Centralized UPI VPA</span>
+                  <div className="text-xs font-bold font-mono text-cyan-400 flex items-center justify-between">
+                    <span>fzpanel@upi</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">ADMIN CONTROLLED</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">All customer payments route through the official FZ PAY merchant account.</p>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Official Payee / Gateway Name</span>
+                  <div className="text-xs font-bold text-white flex items-center justify-between">
+                    <span>FZ PAYMENT BANK</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-extrabold">VERIFIED</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">NPCI UPI verified merchant registered for automatic dynamic QR generation.</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">Customer Payment Instructions</span>
+                <p className="text-xs text-slate-300">
+                  Scan the dynamic QR code or pay to official FZ PAY UPI. Verification runs securely on the backend server before key delivery.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 mb-1.5 block">Merchant UPI ID (VPA)</label>
-                  <input
-                    type="text"
-                    value={paymentConfig.upi_id || ''}
-                    onChange={e => setPaymentConfig({ ...paymentConfig, upi_id: e.target.value })}
-                    placeholder="merchant@okhdfcbank"
-                    className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 mb-1.5 block">Registered Business / Payee Name</label>
-                  <input
-                    type="text"
-                    value={paymentConfig.upi_name || ''}
-                    onChange={e => setPaymentConfig({ ...paymentConfig, upi_name: e.target.value })}
-                    placeholder="CyberStore Official"
-                    className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-300 mb-1.5 block">Customer Payment Instructions</label>
-                <textarea
-                  rows={2}
-                  value={paymentConfig.manual_instructions || ''}
-                  onChange={e => setPaymentConfig({ ...paymentConfig, manual_instructions: e.target.value })}
-                  placeholder="Scan QR or pay to UPI ID. Then send the transaction screenshot for instant order fulfillment."
-                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none"
-                />
-              </div>
-
-              <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+              {/* Dynamic Intent QR Code Generator Preview */}
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <div className="text-xs font-bold text-white flex items-center space-x-1.5">
                     <QrCode className="w-4 h-4 text-emerald-400" />
-                    <span>Dynamic Intent QR Code Generator</span>
+                    <span>Official Dynamic Intent QR Preview</span>
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    Embeds the exact order amount and reference into the QR code automatically.
+                    Generates NPCI standard UPI dynamic QR codes encoded for official FZ PAY settlement.
                   </div>
                 </div>
 
@@ -1992,10 +1995,10 @@ export const BotEditorView: React.FC<BotEditorViewProps> = ({
                   type="button"
                   onClick={handleTestQrGeneration}
                   disabled={qrTestLoading}
-                  className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs rounded-xl border border-emerald-500/40 transition-all flex items-center space-x-1.5"
+                  className="px-3.5 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs rounded-xl border border-emerald-500/40 transition-all flex items-center space-x-1.5 cursor-pointer"
                 >
                   {qrTestLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <QrCode className="w-3.5 h-3.5" />}
-                  <span>Test QR Generation</span>
+                  <span>Test Official FZ PAY QR</span>
                 </button>
               </div>
 
@@ -2019,23 +2022,13 @@ export const BotEditorView: React.FC<BotEditorViewProps> = ({
                 </div>
               )}
 
-              {/* Toggles */}
-              <div className="pt-3 border-t border-slate-800 space-y-2">
-                <label className="flex items-center justify-between p-3 bg-slate-900 rounded-xl cursor-pointer hover:bg-slate-800/80 transition-colors">
-                  <div className="flex items-center space-x-2">
-                    <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                    <div>
-                      <div className="text-xs font-bold text-white">Instant Sandbox / Test Checkout Mode</div>
-                      <div className="text-[11px] text-slate-400">Allows instant automated testing and order verification in bot simulator</div>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={paymentConfig.enable_sandbox ?? true}
-                    onChange={e => setPaymentConfig({ ...paymentConfig, enable_sandbox: e.target.checked })}
-                    className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-400 accent-cyan-500"
-                  />
-                </label>
+              {/* Security Enforcement Status */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
+                <div className="flex items-center space-x-2 text-slate-300">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Key Delivery Protection: <strong>Strict Server Verification (No Key Until Verified Payment)</strong></span>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">LOCKED & ENFORCED</span>
               </div>
             </div>
           )}

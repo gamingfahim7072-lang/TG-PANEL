@@ -1691,13 +1691,56 @@ apiRouter.get('/wallet/my', authenticate, async (req: AuthenticatedRequest, res:
   }
 });
 
-// Explicitly open or create wallet
+// Explicitly open or create wallet (requires KYC verification)
 apiRouter.post('/wallet/create', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const { fullName, aadhaarNumber, phone } = req.body;
+    if (aadhaarNumber && phone) {
+      const result = WalletService.submitAadhaarKyc({
+        userId: req.user!.id,
+        fullName: fullName || req.user!.full_name || 'FZ User',
+        aadhaarNumber,
+        phone
+      });
+      return res.json(result);
+    }
+
     const wallet = WalletService.getOrCreateWallet(req.user!.id);
+    if (wallet.status === 'LOCKED') {
+      return res.status(403).json({
+        success: false,
+        status: 'LOCKED',
+        wallet,
+        error: 'FZ Wallet is locked. You must complete KYC using your 12-digit Aadhaar number and phone number before the wallet can be opened.'
+      });
+    }
     return res.json({ success: true, message: 'FZ PAY Wallet ready.', wallet });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Submit Aadhaar & Phone KYC verification to unlock FZ Wallet
+apiRouter.post('/wallet/kyc-submit', authenticate, rateLimit({ max: 10, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { fullName, aadhaarNumber, phone } = req.body;
+    if (!fullName || !aadhaarNumber || !phone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Full Name, 12-digit Aadhaar Number, and 10-digit Phone Number are required for KYC verification.'
+      });
+    }
+
+    const result = WalletService.submitAadhaarKyc({
+      userId: req.user!.id,
+      fullName,
+      aadhaarNumber,
+      phone
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -4280,33 +4323,45 @@ apiRouter.post('/bots/:id/versions/:versionId/restore', authenticate, async (req
   }
 });
 
-// Bot Payment Configuration & QR
+// Bot Payment Configuration & QR (Locked to Centralized Official FZ PAY)
 apiRouter.get('/bots/:id/payment-config', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const user = req.user!;
   const bot = db.telegram_bots.find(b => b.id === id);
   if (!bot || !assertOwnership(user, bot.owner_id)) return res.status(404).json({ success: false, error: 'Bot not found.' });
 
+  const defaultUpi = (db.upi_configs || []).find(u => u.is_default && u.is_active) || (db.upi_configs || [])[0] || {
+    upi_id: 'fzpanel@upi',
+    upi_name: 'FZ PAYMENT BANK'
+  };
+
   let config = db.bot_payment_configs.find(p => p.bot_id === id);
+  const nowStr = new Date().toISOString();
+
   if (!config) {
     config = {
       id: `paycfg-${id}`,
       bot_id: id,
       owner_id: user.id,
-      enable_sandbox: true,
+      enable_sandbox: false,
       enable_razorpay: false,
       enable_cashfree: false,
       enable_phonepe: false,
       enable_stripe: false,
       enable_manual_upi: true,
-      upi_id: 'merchant@upi',
-      upi_name: 'Merchant Pay',
-      manual_instructions: 'Please transfer the exact amount and submit your payment screenshot for instant order verification.',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      upi_id: defaultUpi.upi_id,
+      upi_name: defaultUpi.upi_name || 'FZ PAYMENT BANK',
+      manual_instructions: 'Please transfer the exact amount using official FZ PAY UPI. Orders are automatically verified before key delivery.',
+      created_at: nowStr,
+      updated_at: nowStr
     };
     db.bot_payment_configs.push(config);
-    db.save();
+    db.saveImmediately();
+  } else {
+    // Keep locked to official FZ PAY UPI configuration
+    config.upi_id = defaultUpi.upi_id;
+    config.upi_name = defaultUpi.upi_name || 'FZ PAYMENT BANK';
+    config.enable_sandbox = false;
   }
 
   return res.json({ success: true, config });
@@ -4319,21 +4374,40 @@ apiRouter.put('/bots/:id/payment-config', authenticate, async (req: Authenticate
     const bot = db.telegram_bots.find(b => b.id === id);
     if (!bot || !assertOwnership(user, bot.owner_id)) return res.status(404).json({ success: false, error: 'Bot not found.' });
 
+    const isPlatformAdmin = user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    const defaultUpi = (db.upi_configs || []).find(u => u.is_default && u.is_active) || (db.upi_configs || [])[0] || {
+      upi_id: 'fzpanel@upi',
+      upi_name: 'FZ PAYMENT BANK'
+    };
+
     let config = db.bot_payment_configs.find(p => p.bot_id === id);
     const nowStr = new Date().toISOString();
+
+    const allowedUpdates = {
+      manual_instructions: req.body.manual_instructions || 'Please transfer the exact amount using official FZ PAY UPI. Orders are automatically verified before key delivery.',
+      // UPI configuration is centralized and controlled by panel owner/admin only
+      upi_id: isPlatformAdmin && req.body.upi_id ? req.body.upi_id : defaultUpi.upi_id,
+      upi_name: isPlatformAdmin && req.body.upi_name ? req.body.upi_name : (defaultUpi.upi_name || 'FZ PAYMENT BANK'),
+      enable_sandbox: false, // Bypass strictly disabled for all bots
+      enable_manual_upi: true,
+      updated_at: nowStr
+    };
 
     if (!config) {
       config = {
         id: `paycfg-${id}`,
         bot_id: id,
         owner_id: user.id,
-        ...req.body,
-        created_at: nowStr,
-        updated_at: nowStr
+        enable_razorpay: false,
+        enable_cashfree: false,
+        enable_phonepe: false,
+        enable_stripe: false,
+        ...allowedUpdates,
+        created_at: nowStr
       };
       db.bot_payment_configs.push(config);
     } else {
-      Object.assign(config, req.body, { updated_at: nowStr });
+      Object.assign(config, allowedUpdates);
     }
 
     db.saveImmediately();

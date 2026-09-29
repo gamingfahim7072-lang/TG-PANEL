@@ -152,21 +152,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setVerifying(true);
     setError(null);
     try {
-      const verifyRes = await api.verifyPayment({
-        paymentId: paymentOrder.payment.id,
-        gatewayPaymentId: `upi_${Date.now()}_verified`,
-        signature: `sig_fz_${Math.random().toString(36).substring(2)}`,
-        provider
+      const targetOrderId = paymentOrder.order?.id || paymentOrder.orderId;
+      const targetPaymentId = paymentOrder.payment?.id || paymentOrder.paymentId;
+      const verifyRes = await api.verifyPaymentOrder(targetOrderId, {
+        paymentId: targetPaymentId,
+        provider: 'UPI'
       });
 
-      if (verifyRes.subscription) {
+      if (verifyRes.success && verifyRes.subscription) {
         setVerifiedSub(verifyRes.subscription);
         onSubscriptionUpdated(verifyRes.subscription);
       } else {
-        throw new Error('Payment verification pending or failed.');
+        setError(`❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.`);
       }
     } catch (err: any) {
-      setError(err.message || 'Payment verification failed. Please try again.');
+      setError(`❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.`);
     } finally {
       setVerifying(false);
     }
@@ -215,11 +215,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-black text-white flex items-center gap-2">
-                    <span>SUBSCRIPTION ACTIVE</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-extrabold uppercase">VERIFIED ✅</span>
+                    <span>✅ Payment Successfully Verified</span>
                   </h3>
+                  <p className="text-xs text-emerald-300 font-bold mt-1">
+                    🎉 Your subscription has been activated successfully.
+                  </p>
                   <p className="text-xs text-slate-300 mt-0.5">
-                    Your payment was verified and processed through FZ Payment Bank. Your bot visual editor is fully unlocked!
+                    Your payment was verified and processed through official FZ PAY rails. Your bot visual editor is fully unlocked!
                   </p>
                 </div>
               </div>
@@ -456,17 +458,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 })}
               </div>
 
-              {/* Payment Method Selector */}
+              {/* Payment Method Selector - FZ PAY ONLY */}
               <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-slate-300">Choose Payment Method</div>
+                  <div className="text-xs font-bold text-slate-300">Supported Payment Methods (FZ PAY ONLY)</div>
                   <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3" />
-                    <span>Server-Side Atomic Settlement</span>
+                    <span>Official FZ PAY Gateway</span>
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* OFFICIAL FZ PAY UPI & QR SCANNER */}
+                  <button
+                    key="UPI"
+                    type="button"
+                    onClick={() => {
+                      setProvider('UPI');
+                      setError(null);
+                      setInsufficientBalance(false);
+                    }}
+                    className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      provider === 'UPI'
+                        ? 'bg-gradient-to-br from-cyan-500/20 to-blue-500/10 border-cyan-500 text-cyan-300 ring-1 ring-cyan-500/50'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-xs font-black text-white flex items-center gap-1.5">
+                        <QrCode className="w-4 h-4 text-cyan-400" />
+                        <span>Official FZ PAY UPI & QR</span>
+                      </div>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-extrabold uppercase">
+                        INSTANT UPI
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-300">
+                      PhonePe, Google Pay, Paytm, BHIM to Official FZ PAY
+                    </div>
+                  </button>
+
                   {/* FZ PAY INTERNAL WALLET */}
                   <button
                     key="FZ_PAY"
@@ -476,18 +507,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       setError(null);
                       setInsufficientBalance(false);
                     }}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden ${
+                    className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden ${
                       provider === 'FZ_PAY'
                         ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/50'
                         : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-xs font-black text-white flex items-center gap-1">
-                        <Wallet className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>FZ PAY Wallet</span>
+                      <div className="text-xs font-black text-white flex items-center gap-1.5">
+                        <Wallet className="w-4 h-4 text-emerald-400" />
+                        <span>FZ PAY Internal Wallet</span>
                       </div>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-extrabold uppercase">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-extrabold uppercase">
                         ZERO FEE
                       </span>
                     </div>
@@ -495,31 +526,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       Balance: <strong className="text-emerald-400 font-mono">₹{(wallet?.balance || 0).toLocaleString()}</strong>
                     </div>
                   </button>
-
-                  {[
-                    { id: 'UPI', label: 'UPI / Dynamic QR', desc: 'PhonePe, GPay, Paytm' },
-                    { id: 'RAZORPAY', label: 'Razorpay PG', desc: 'Cards & NetBanking' },
-                    { id: 'CASHFREE', label: 'Cashfree', desc: 'Auto-Debit & Cards' },
-                    { id: 'PHONEPE', label: 'PhonePe Gateway', desc: 'Direct PG Checkout' }
-                  ].map(gw => (
-                    <button
-                      key={gw.id}
-                      type="button"
-                      onClick={() => {
-                        setProvider(gw.id as any);
-                        setError(null);
-                        setInsufficientBalance(false);
-                      }}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        provider === gw.id
-                          ? 'bg-cyan-500/10 border-cyan-500 text-cyan-300'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold text-white">{gw.label}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{gw.desc}</div>
-                    </button>
-                  ))}
                 </div>
 
                 {/* FZ PAY WALLET PAYMENT DETAILS & BALANCE CHECK */}

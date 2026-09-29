@@ -132,6 +132,58 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
   const [adjError, setAdjError] = useState<string | null>(null);
   const [adjSuccess, setAdjSuccess] = useState<string | null>(null);
 
+  // KYC Verification Form State (Aadhaar & Phone required)
+  const [kycFullName, setKycFullName] = useState(user.full_name || '');
+  const [kycAadhaar, setKycAadhaar] = useState('');
+  const [kycPhone, setKycPhone] = useState(user.phone || '');
+  const [kycLoading, setKycLoading] = useState(false);
+  const [kycError, setKycError] = useState<string | null>(null);
+  const [kycSuccess, setKycSuccess] = useState<string | null>(null);
+
+  const handleKycSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setKycError(null);
+    setKycSuccess(null);
+
+    const cleanAadhaar = kycAadhaar.replace(/[\s-]/g, '');
+    if (!/^\d{12}$/.test(cleanAadhaar)) {
+      setKycError('Invalid Aadhaar number. Please enter a valid 12-digit Aadhaar number.');
+      return;
+    }
+
+    const cleanPhone = kycPhone.replace(/[\s-+]/g, '').slice(-10);
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      setKycError('Invalid mobile phone number. Please enter a valid 10-digit Indian phone number.');
+      return;
+    }
+
+    if (!kycFullName.trim() || kycFullName.trim().length < 2) {
+      setKycError('Please enter your full legal name as per official Aadhaar records.');
+      return;
+    }
+
+    setKycLoading(true);
+    try {
+      const res = await api.submitKyc({
+        fullName: kycFullName.trim(),
+        aadhaarNumber: cleanAadhaar,
+        phone: cleanPhone
+      });
+
+      if (res.success) {
+        setKycSuccess('🎉 KYC Verified! Your separate FZ PAY Wallet has been created and unlocked.');
+        setWallet(res.wallet);
+        loadWalletData();
+      } else {
+        setKycError(res.message || 'KYC verification failed.');
+      }
+    } catch (err: any) {
+      setKycError(err.message || 'Failed to submit KYC verification.');
+    } finally {
+      setKycLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadWalletData();
   }, []);
@@ -474,54 +526,165 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
           </div>
         </div>
 
-        {/* Quick Action Buttons Bar */}
-        <div className="mt-6 pt-5 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-          <button
-            onClick={() => {
-              setDepositError(null);
-              setDepositSuccess(null);
-              setDepositOrder(null);
-              setShowAddMoney(true);
-            }}
-            className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs transition-all shadow-lg shadow-cyan-500/20 cursor-pointer active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Money</span>
-          </button>
+        {/* If Wallet is LOCKED -> Display Aadhaar & Phone KYC Form */}
+        {wallet?.status === 'LOCKED' ? (
+          <div className="mt-6 pt-5 border-t border-slate-800/80 space-y-4">
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-2">
+              <div className="flex items-center space-x-2 font-bold text-sm text-white">
+                <Lock className="w-4 h-4 text-amber-400" />
+                <span>FZ Wallet Locked — Mandatory Aadhaar & Phone KYC Required</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                When an account is created on FZ Panel, your internal FZ Wallet remains locked initially. Complete your official KYC verification using your 12-digit Aadhaar number and phone number to unlock and create your separate FZ PAY Wallet.
+              </p>
+              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-cyan-400 flex items-center space-x-2 font-medium">
+                <Shield className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span><strong>Security Notice:</strong> This FZ Wallet is an internal closed-loop digital ledger. It is <strong>NOT</strong> directly connected to your personal bank account. It maintains its own independent balance and transaction ledger.</span>
+              </div>
+            </div>
 
-          <button
-            onClick={() => {
-              setWithdrawError(null);
-              setWithdrawSuccess(null);
-              setShowWithdraw(true);
-            }}
-            className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
-          >
-            <Download className="w-4 h-4 text-amber-400" />
-            <span>Withdraw</span>
-          </button>
+            {kycError && (
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{kycError}</span>
+              </div>
+            )}
 
-          <button
-            onClick={() => {
-              setSendError(null);
-              setSendSuccess(null);
-              setSendConfirming(false);
-              setShowSendMoney(true);
-            }}
-            className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
-          >
-            <Send className="w-4 h-4 text-cyan-400" />
-            <span>Send Money</span>
-          </button>
+            {kycSuccess && (
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{kycSuccess}</span>
+              </div>
+            )}
 
-          <button
-            onClick={() => setShowReceiveMoney(true)}
-            className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
-          >
-            <QrCode className="w-4 h-4 text-emerald-400" />
-            <span>Receive Money</span>
-          </button>
-        </div>
+            <form onSubmit={handleKycSubmit} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <UserCheck className="w-4 h-4 text-cyan-400" />
+                <span>Identity & Contact Verification</span>
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 mb-1.5 block">Full Legal Name (as on Aadhaar)</label>
+                  <input
+                    type="text"
+                    required
+                    value={kycFullName}
+                    onChange={e => setKycFullName(e.target.value)}
+                    placeholder="e.g. Rahul Sharma"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 mb-1.5 block">12-Digit Aadhaar Number</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={14}
+                    value={kycAadhaar}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 12);
+                      setKycAadhaar(val);
+                    }}
+                    placeholder="1234 5678 9012"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none font-mono tracking-wider"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">12 numeric digits required</span>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 mb-1.5 block">10-Digit Mobile Phone Number</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={10}
+                    value={kycPhone}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                      setKycPhone(val);
+                    }}
+                    placeholder="9876543210"
+                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none font-mono tracking-wider"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">Valid 10-digit Indian mobile number</span>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
+                <span className="text-[11px] text-slate-400">
+                  By unlocking, you agree to create a separate internal FZ PAY financial ledger account.
+                </span>
+                <button
+                  type="submit"
+                  disabled={kycLoading}
+                  className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl transition-all shadow-lg shadow-cyan-500/20 flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {kycLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Verifying Aadhaar & Phone KYC...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserCheck className="w-4 h-4" />
+                      <span>Verify KYC & Unlock FZ Wallet</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          /* Quick Action Buttons Bar */
+          <div className="mt-6 pt-5 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+            <button
+              onClick={() => {
+                setDepositError(null);
+                setDepositSuccess(null);
+                setDepositOrder(null);
+                setShowAddMoney(true);
+              }}
+              className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs transition-all shadow-lg shadow-cyan-500/20 cursor-pointer active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Money</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setWithdrawError(null);
+                setWithdrawSuccess(null);
+                setShowWithdraw(true);
+              }}
+              className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
+            >
+              <Download className="w-4 h-4 text-amber-400" />
+              <span>Withdraw</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSendError(null);
+                setSendSuccess(null);
+                setSendConfirming(false);
+                setShowSendMoney(true);
+              }}
+              className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
+            >
+              <Send className="w-4 h-4 text-cyan-400" />
+              <span>Send Money</span>
+            </button>
+
+            <button
+              onClick={() => setShowReceiveMoney(true)}
+              className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
+            >
+              <QrCode className="w-4 h-4 text-emerald-400" />
+              <span>Receive Money</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Navigation Tabs */}

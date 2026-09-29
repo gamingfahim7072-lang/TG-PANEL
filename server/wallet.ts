@@ -18,7 +18,7 @@ import { logAudit } from './auth.js';
 export class WalletService {
   /**
    * Retrieves or creates a secure internal FZ PAY wallet for a user.
-   * Every eligible user or connected bot owner gets a unique wallet ID.
+   * If user has not completed Aadhaar + Phone KYC, the wallet remains LOCKED.
    */
   public static getOrCreateWallet(userId: string): Wallet {
     const user = db.users.find(u => u.id === userId);
@@ -30,16 +30,25 @@ export class WalletService {
     let wallet = db.wallets.find(w => w.owner_user_id === userId);
 
     const now = new Date().toISOString();
+    const kyc = (db.kyc_verifications || []).find(k => k.user_id === userId && k.status === 'KYC_VERIFIED');
 
     if (!wallet) {
       const cleanId = user.id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase() || Math.floor(100000 + Math.random() * 900000);
+      const isSuperAdmin = user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+      const initialStatus = (kyc || isSuperAdmin) ? 'ACTIVE' : 'LOCKED';
+      const kycStatus = (kyc || isSuperAdmin) ? 'VERIFIED' : 'NOT_SUBMITTED';
+
       wallet = {
         id: `FZ-WAL-${cleanId}`,
         owner_user_id: user.id,
         balance: user.wallet_balance !== undefined ? user.wallet_balance : 0,
         pending_balance: 0,
         currency: 'INR',
-        status: 'ACTIVE',
+        status: initialStatus,
+        kyc_status: kycStatus,
+        aadhaar_masked: kyc?.document_number ? `XXXX-XXXX-${kyc.document_number.slice(-4)}` : undefined,
+        phone: kyc?.phone || user.phone,
+        full_name: kyc?.full_name || user.full_name,
         total_received: user.total_deposited || user.wallet_balance || 0,
         total_spent: user.total_spent || 0,
         created_at: user.created_at || now,
@@ -48,6 +57,15 @@ export class WalletService {
       db.wallets.push(wallet);
       db.saveImmediately();
     } else {
+      // If user has completed KYC in the meantime, ensure status is ACTIVE
+      if (kyc && wallet.status === 'LOCKED') {
+        wallet.status = 'ACTIVE';
+        wallet.kyc_status = 'VERIFIED';
+        wallet.aadhaar_masked = `XXXX-XXXX-${kyc.document_number?.slice(-4) || 'XXXX'}`;
+        wallet.phone = kyc.phone;
+        wallet.full_name = kyc.full_name;
+        wallet.updated_at = now;
+      }
       // Sync balance if user has wallet_balance defined
       if (user.wallet_balance !== undefined && Math.abs(wallet.balance - user.wallet_balance) > 0.001) {
         wallet.balance = user.wallet_balance;
@@ -56,6 +74,113 @@ export class WalletService {
     }
 
     return wallet;
+  }
+
+  /**
+   * Completes KYC using 12-digit Aadhaar number and Phone number.
+   * Unlocks and creates the separate FZ Wallet (not connected to personal bank account).
+   */
+  public static submitAadhaarKyc(params: {
+    userId: string;
+    fullName: string;
+    aadhaarNumber: string;
+    phone: string;
+  }): { success: boolean; wallet: Wallet; message: string } {
+    const { userId, fullName, aadhaarNumber, phone } = params;
+    const user = db.users.find(u => u.id === userId);
+    if (!user) throw new Error('User not found.');
+
+    if (!fullName || fullName.trim().length < 2) {
+      throw new Error('Please enter your full legal name as per official Aadhaar records.');
+    }
+
+    const cleanAadhaar = (aadhaarNumber || '').replace(/[\s-]/g, '');
+    if (!/^\d{12}$/.test(cleanAadhaar)) {
+      throw new Error('Invalid Aadhaar number. Aadhaar must contain exactly 12 numeric digits.');
+    }
+
+    const cleanPhone = (phone || '').replace(/[\s-+]/g, '').slice(-10);
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      throw new Error('Invalid Indian mobile phone number. Must be a valid 10-digit number starting with 6, 7, 8, or 9.');
+    }
+
+    const nowStr = new Date().toISOString();
+    const maskedAadhaar = `XXXX-XXXX-${cleanAadhaar.slice(-4)}`;
+
+    if (!db.kyc_verifications) db.kyc_verifications = [];
+    let kycRecord = db.kyc_verifications.find(k => k.user_id === userId);
+    if (!kycRecord) {
+      kycRecord = {
+        id: `KYC-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        user_id: userId,
+        phone: cleanPhone,
+        full_name: fullName.trim(),
+        document_type: 'AADHAAR',
+        document_number: cleanAadhaar,
+        status: 'KYC_VERIFIED',
+        verified_at: nowStr,
+        created_at: nowStr,
+        updated_at: nowStr
+      };
+      db.kyc_verifications.push(kycRecord);
+    } else {
+      kycRecord.phone = cleanPhone;
+      kycRecord.full_name = fullName.trim();
+      kycRecord.document_type = 'AADHAAR';
+      kycRecord.document_number = cleanAadhaar;
+      kycRecord.status = 'KYC_VERIFIED';
+      kycRecord.verified_at = nowStr;
+      kycRecord.updated_at = nowStr;
+    }
+
+    if (!db.wallets) db.wallets = [];
+    let wallet = db.wallets.find(w => w.owner_user_id === userId);
+    const cleanId = user.id.replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase() || Math.floor(100000 + Math.random() * 900000);
+
+    if (!wallet) {
+      wallet = {
+        id: `FZ-WAL-${cleanId}`,
+        owner_user_id: user.id,
+        balance: 0,
+        pending_balance: 0,
+        currency: 'INR',
+        status: 'ACTIVE',
+        kyc_status: 'VERIFIED',
+        aadhaar_masked: maskedAadhaar,
+        phone: cleanPhone,
+        full_name: fullName.trim(),
+        total_received: 0,
+        total_spent: 0,
+        created_at: nowStr,
+        updated_at: nowStr
+      };
+      db.wallets.push(wallet);
+    } else {
+      wallet.status = 'ACTIVE';
+      wallet.kyc_status = 'VERIFIED';
+      wallet.aadhaar_masked = maskedAadhaar;
+      wallet.phone = cleanPhone;
+      wallet.full_name = fullName.trim();
+      wallet.updated_at = nowStr;
+    }
+
+    kycRecord.wallet_id = wallet.id;
+    db.saveImmediately();
+
+    logAudit({
+      userId,
+      userEmail: user.email,
+      action: 'KYC_AADHAAR_VERIFIED',
+      resourceType: 'WALLET',
+      resourceId: wallet.id,
+      metadata: { maskedAadhaar, phone: cleanPhone }
+    });
+
+    return {
+      success: true,
+      wallet,
+      message: 'Aadhaar & Phone KYC successfully verified. Your FZ PAY internal wallet has been unlocked!'
+    };
   }
 
   /**

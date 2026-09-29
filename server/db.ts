@@ -8,6 +8,7 @@ export interface User {
   password_hash: string;
   role: 'USER' | 'CUSTOMER' | 'RESELLER' | 'ADMIN' | 'OWNER' | 'SUPER ADMIN' | string;
   full_name: string;
+  phone?: string;
   avatar_url?: string;
   telegram_username?: string;
   telegram_id?: string;
@@ -211,8 +212,9 @@ export interface Wallet {
   balance: number;
   pending_balance: number;
   currency: string;
-  status: 'NOT_CREATED' | 'KYC_PENDING' | 'KYC_VERIFIED' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
+  status: 'NOT_CREATED' | 'KYC_PENDING' | 'KYC_VERIFIED' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED' | 'LOCKED';
   kyc_status?: 'NOT_SUBMITTED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+  aadhaar_masked?: string;
   phone?: string;
   full_name?: string;
   total_received: number;

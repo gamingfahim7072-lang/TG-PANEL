@@ -69,7 +69,11 @@ export interface Wallet {
   balance: number;
   pending_balance: number;
   currency: string;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: 'ACTIVE' | 'SUSPENDED' | 'LOCKED' | 'NOT_CREATED';
+  kyc_status?: 'NOT_SUBMITTED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+  aadhaar_masked?: string;
+  phone?: string;
+  full_name?: string;
   total_received: number;
   total_spent: number;
   created_at: string;

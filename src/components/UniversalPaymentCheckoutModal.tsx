@@ -279,7 +279,7 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
           wallet: res.wallet
         });
         setVerifyMessage({
-          text: 'Payment successfully received and verified.',
+          text: '✅ Payment Successfully Verified\n🎉 Your subscription has been activated successfully.',
           isSuccess: true
         });
         onSuccess({
@@ -292,14 +292,14 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
       } else {
         // Legitimate rule: Do NOT assume paid! Return professional pending/failure notice
         setVerifyMessage({
-          text: res.message || 'Payment could not be verified. Please complete the payment and try again.',
+          text: '❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.',
           isSuccess: false
         });
         setPaymentStatus(res.status === 'EXPIRED' ? 'EXPIRED' : 'PENDING');
       }
     } catch (err: any) {
       setVerifyMessage({
-        text: err.message || 'Payment could not be verified. Please complete the payment and try again.',
+        text: '❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.',
         isSuccess: false
       });
     } finally {
@@ -518,10 +518,10 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
                 </div>
               </div>
 
-              {/* Payment Method Selector */}
+              {/* Payment Method Selector - FZ PAY ONLY */}
               <div className="space-y-2">
-                <div className="text-xs font-bold text-slate-300">Supported Payment Methods</div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="text-xs font-bold text-slate-300">Supported Payment Methods (FZ PAY ONLY)</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <button
                     type="button"
                     onClick={() => setProvider('UPI')}
@@ -533,9 +533,9 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
                   >
                     <div className="text-xs font-bold text-white flex items-center gap-1.5">
                       <QrCode className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>UPI Dynamic QR</span>
+                      <span>Official FZ PAY UPI & Dynamic QR</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">PhonePe, GPay, Paytm</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">PhonePe, GPay, Paytm, BHIM</div>
                   </button>
 
                   {/* FZ PAY Wallet (Only if not deposit and wallet has balance) */}
@@ -551,39 +551,13 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
                     >
                       <div className="text-xs font-bold text-white flex items-center gap-1.5">
                         <Wallet className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>FZ PAY Wallet</span>
+                        <span>FZ PAY Internal Wallet</span>
                       </div>
                       <div className="text-[10px] text-slate-400 mt-0.5">
                         Bal: <strong className="text-emerald-400 font-mono">₹{(wallet?.balance || 0).toLocaleString()}</strong>
                       </div>
                     </button>
                   )}
-
-                  <button
-                    type="button"
-                    onClick={() => setProvider('RAZORPAY')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                      provider === 'RAZORPAY'
-                        ? 'bg-cyan-500/10 border-cyan-500 text-cyan-300 ring-1 ring-cyan-500/40'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-white">Razorpay PG</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">Cards & NetBanking</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setProvider('CASHFREE')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                      provider === 'CASHFREE'
-                        ? 'bg-cyan-500/10 border-cyan-500 text-cyan-300 ring-1 ring-cyan-500/40'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-white">Cashfree</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">PG & Auto-Debit</div>
-                  </button>
                 </div>
               </div>
 

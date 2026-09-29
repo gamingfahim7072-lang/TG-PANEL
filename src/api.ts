@@ -239,9 +239,17 @@ class ApiClient {
     }>(`/wallet/my`);
   }
 
-  public async createWallet() {
+  public async createWallet(payload?: { fullName?: string; aadhaarNumber?: string; phone?: string }) {
     return this.request<{ success: boolean; message: string; wallet: Wallet }>(`/wallet/create`, {
-      method: 'POST'
+      method: 'POST',
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+  }
+
+  public async submitKyc(payload: { fullName: string; aadhaarNumber: string; phone: string }) {
+    return this.request<{ success: boolean; message: string; wallet: Wallet }>(`/wallet/kyc-submit`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
     });
   }
 

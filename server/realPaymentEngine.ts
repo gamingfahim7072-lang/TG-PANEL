@@ -16,7 +16,7 @@ import { logAudit } from './auth.js';
 
 export interface VerificationResult {
   success: boolean;
-  status: 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'MANUAL_REVIEW';
+  status: 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'MANUAL_REVIEW' | 'NOT_RECEIVED';
   message: string;
   orderId?: string;
   paymentId?: string;
@@ -316,11 +316,9 @@ export class RealPaymentEngine {
     // 9. Payment is still PENDING (not yet received on provider rails)
     return {
       success: false,
-      status: 'PENDING',
+      status: 'NOT_RECEIVED',
       configured: configCheck.configured,
-      message: configCheck.configured
-        ? 'Payment could not be verified. Please complete the payment in your banking/UPI app and try again.'
-        : 'Payment could not be verified. Provider confirmation has not been received yet. (CONFIGURATION REQUIRED: Live provider credentials must be set on server)'
+      message: '❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.'
     };
   }
 
@@ -344,7 +342,7 @@ export class RealPaymentEngine {
       return {
         success: true,
         status: 'PAID',
-        message: 'Payment successfully received and verified.',
+        message: '✅ Payment Successfully Verified\n🎉 Your subscription has been activated successfully.',
         orderId: order.id,
         paymentId: payment.id,
         transactionId,
@@ -592,7 +590,7 @@ export class RealPaymentEngine {
     return {
       success: true,
       status: 'PAID',
-      message: 'Payment successfully received and verified.',
+      message: '✅ Payment Successfully Verified\n🎉 Your subscription has been activated successfully.',
       orderId: order.id,
       paymentId: payment.id,
       transactionId,

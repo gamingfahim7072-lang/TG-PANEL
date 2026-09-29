@@ -769,90 +769,17 @@ export class TelegramService {
 
       const orderId = `ORD-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`;
 
-      // If merchant has Manual UPI Payment enabled with a UPI ID
-      if (paymentConfig?.enable_manual_upi && paymentConfig.upi_id) {
-        const upiId = paymentConfig.upi_id;
-        const upiName = paymentConfig.upi_name || settings.display_name || bot.first_name;
-        const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(upiName)}&am=${itemPrice}&cu=INR&tn=${orderId}`;
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(upiUri)}`;
+      // Centralized Official FZ PAY UPI Rails
+      const officialUpi = (db.upi_configs || []).find(u => u.is_default && u.is_active) || (db.upi_configs || [])[0] || {
+        upi_id: 'fzpanel@upi',
+        upi_name: 'FZ PAYMENT BANK'
+      };
 
-        const pendingOrder: Order = {
-          id: orderId,
-          owner_id: bot.owner_id,
-          bot_id: bot.id,
-          customer_id: customer.id,
-          customer_name: `${customer.first_name} ${customer.last_name || ''}`.trim(),
-          customer_telegram_id: customer.telegram_id,
-          product_id: prod.id,
-          package_id: pkg?.id,
-          product_name: itemName,
-          quantity: 1,
-          unit_price: itemPrice,
-          total_amount: itemPrice,
-          currency: itemCurrency,
-          status: 'PENDING',
-          payment_provider: 'MANUAL_UPI',
-          payment_id: '',
-          delivered_type: prod.delivery_type,
-          created_at: nowStr,
-          updated_at: nowStr
-        };
-        db.orders.unshift(pendingOrder);
-        db.save();
+      const upiUri = `upi://pay?pa=${encodeURIComponent(officialUpi.upi_id)}&pn=${encodeURIComponent(officialUpi.upi_name)}&am=${itemPrice}&cu=INR&tn=${orderId}`;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(upiUri)}`;
 
-        let text = `💳 *Payment Checkout — ${itemName}*\n\n`;
-        text += `🧾 *Order ID:* \`${orderId}\`\n`;
-        text += `💵 *Total Amount:* ${itemCurrency} ${itemPrice}\n\n`;
-        text += `🏦 *UPI ID:* \`${upiId}\`\n`;
-        text += `👤 *Payee Name:* ${upiName}\n`;
-        if (paymentConfig.bank_account_number) {
-          text += `🏛️ *Account:* \`${paymentConfig.bank_account_number}\` (IFSC: \`${paymentConfig.bank_ifsc}\`)\n`;
-        }
-        if (paymentConfig.manual_instructions) {
-          text += `\n📝 *Instructions:* ${paymentConfig.manual_instructions}\n`;
-        }
-        text += `\n📲 *Scan the QR code above or pay directly to the UPI ID.*\nAfter payment, tap *Submit UTR* or reply to this chat with your 12-digit UPI UTR number!`;
-
-        const keyboard = [
-          [{ text: '✅ I Have Paid — Submit UTR', callback_data: `action:SUBMIT_UTR:${orderId}` }],
-          [{ text: '⚡ Instant Pay (Test / Sandbox)', callback_data: `action:INSTANT_FULFILL:${orderId}` }],
-          [{ text: '🔙 Back to Products', callback_data: 'action:PRODUCTS_LIST:ALL' }]
-        ];
-
-        if (!isSimulator && rawToken && !rawToken.includes('Sample')) {
-          await this.sendPhoto(rawToken, chatId, qrUrl, text, keyboard);
-        }
-        return { responseText: text, keyboard };
-      }
-
-      // Default / Automated Digital Delivery
-      let deliveredContent = '';
-      let downloadUrl = '';
-
-      if (prod.delivery_type === 'LICENSE_KEY' || prod.delivery_type === 'SERIAL_KEY') {
-        const availableKey = db.license_keys.find(k => k.product_id === prod.id && !k.is_redeemed);
-        if (availableKey) {
-          availableKey.is_redeemed = true;
-          availableKey.redeemed_by_customer_id = customer.id;
-          availableKey.redeemed_at = nowStr;
-          availableKey.order_id = orderId;
-          deliveredContent = `🔑 *Your License Key:*\n\`${availableKey.license_key}\``;
-          prod.stock_count = Math.max(0, prod.stock_count - 1);
-        } else {
-          deliveredContent = `🔑 *Serial Key Generated:*\n\`PROD-${Math.random().toString(36).substring(2, 10).toUpperCase()}-KEY\``;
-        }
-      } else if (prod.delivery_type === 'DIGITAL_FILE') {
-        const fileRecord = db.digital_files.find(f => f.product_id === prod.id);
-        const downloadToken = fileRecord?.download_token || CryptoService.generateRandomToken(12);
-        downloadUrl = `/api/downloads/${orderId}/${downloadToken}`;
-        deliveredContent = `📥 *Digital Asset Ready:* ${fileRecord?.original_filename || prod.name}\n\nClick link to download:\n${process.env.APP_URL || ''}${downloadUrl}`;
-      } else if (prod.delivery_type === 'CUSTOM_MESSAGE') {
-        deliveredContent = `📩 *Access Message:*\n${pkg?.custom_message || prod.custom_message || 'Thank you for your purchase!'}`;
-      } else {
-        deliveredContent = `🔑 *Product Code:*\n\`SERIAL-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}\``;
-      }
-
-      const newOrder: Order = {
+      // Create strictly PENDING order (Payment Pending -> No Key)
+      const pendingOrder: Order = {
         id: orderId,
         owner_id: bot.owner_id,
         bot_id: bot.id,
@@ -866,47 +793,33 @@ export class TelegramService {
         unit_price: itemPrice,
         total_amount: itemPrice,
         currency: itemCurrency,
-        status: 'DELIVERED',
-        payment_provider: 'TELEGRAM_BOT_CHECKOUT',
-        payment_id: `tx_${Date.now()}`,
+        status: 'PENDING',
+        payment_provider: 'FZ_PAY',
+        payment_id: '',
         delivered_type: prod.delivery_type,
-        delivered_content: deliveredContent,
-        download_url: downloadUrl || undefined,
         created_at: nowStr,
         updated_at: nowStr
       };
-      db.orders.unshift(newOrder);
+      db.orders.unshift(pendingOrder);
+      db.saveImmediately();
 
-      customer.total_purchases += 1;
-      customer.total_spent += itemPrice;
-      customer.last_purchase_at = nowStr;
-      db.save();
-
-      logAudit({
-        userId: bot.owner_id,
-        action: 'ORDER_FULFILLED',
-        resourceType: 'ORDER',
-        resourceId: orderId,
-        metadata: { botId: bot.id, customerId: customer.id, amount: itemPrice, packageName: pkg?.name }
-      });
-
-      let text = `🎉 *Payment Confirmed & Delivered!*\n\n`;
+      let text = `💳 *Official FZ PAY Checkout — ${itemName}*\n\n`;
       text += `🧾 *Order ID:* \`${orderId}\`\n`;
-      text += `📦 *Package:* ${itemName}\n`;
-      text += `💵 *Total:* ${itemCurrency} ${itemPrice}\n\n`;
-      text += `${deliveredContent}\n\n`;
-      text += `_Your order has been recorded in /orders for future access._`;
+      text += `💵 *Total Amount:* ${itemCurrency} ${itemPrice}\n\n`;
+      text += `🏦 *Official FZ PAY UPI:* \`${officialUpi.upi_id}\`\n`;
+      text += `👤 *Payee:* ${officialUpi.upi_name}\n`;
+      text += `\n📲 *Scan the QR code above or pay directly to the official FZ PAY UPI ID.*\nAfter payment, tap *[ VERIFY PAYMENT ]* or reply to this chat with your 12-digit UPI UTR number.\n\n_Security Notice: Products and license keys are delivered strictly following verified payment settlement._`;
 
       const keyboard = [
-        [{ text: '🛍️ Shop More', callback_data: 'action:PRODUCTS_LIST:ALL' }],
-        [{ text: '🧾 My Orders', callback_data: 'action:MY_ORDERS:VIEW' }],
-        [{ text: '🔙 Home', callback_data: 'action:HOME:HOME' }]
+        [{ text: '🔎 [ VERIFY PAYMENT ]', callback_data: `action:VERIFY_PAYMENT:${orderId}` }],
+        [{ text: '📝 Submit UTR / Reference ID', callback_data: `action:SUBMIT_UTR:${orderId}` }],
+        [{ text: '🔙 Back to Products', callback_data: 'action:PRODUCTS_LIST:ALL' }]
       ];
 
       if (!isSimulator && rawToken && !rawToken.includes('Sample')) {
-        await this.sendMessage(rawToken, chatId, text, keyboard);
+        await this.sendPhoto(rawToken, chatId, qrUrl, text, keyboard);
       }
-      return { responseText: text, keyboard, deliveredContent };
+      return { responseText: text, keyboard };
     }
 
     // 8. Handle Standard Product Buy / Payment Confirmation
@@ -924,8 +837,12 @@ export class TelegramService {
 
     // 9. Handle Payment Info & Dynamic QR Display (/payment, PAYMENT_INFO)
     if (incomingText === '/payment' || callbackData?.startsWith('action:PAYMENT_INFO:')) {
-      const upiId = paymentConfig.upi_id || 'merchant@upi';
-      const upiName = paymentConfig.upi_name || settings.display_name || bot.first_name;
+      const officialUpi = (db.upi_configs || []).find(u => u.is_default && u.is_active) || (db.upi_configs || [])[0] || {
+        upi_id: 'fzpanel@upi',
+        upi_name: 'FZ PAYMENT BANK'
+      };
+      const upiId = officialUpi.upi_id;
+      const upiName = officialUpi.upi_name;
 
       let text = `💳 *Merchant Payment Methods*\n\n`;
       text += `🏦 *UPI ID:* \`${upiId}\`\n`;
@@ -1046,70 +963,140 @@ export class TelegramService {
       return { responseText: text, keyboard };
     }
 
-    // 14. Handle Instant Fulfill (Test / Sandbox / Direct Payment Fulfill)
-    if (callbackData?.startsWith('action:INSTANT_FULFILL:')) {
-      const orderId = callbackData.replace('action:INSTANT_FULFILL:', '').trim();
+    // 14. Handle Payment Verification (Official FZ PAY Server Verification)
+    if (callbackData?.startsWith('action:VERIFY_PAYMENT:')) {
+      const orderId = callbackData.replace('action:VERIFY_PAYMENT:', '').trim();
       const order = db.orders.find(o => o.id === orderId && o.bot_id === bot.id);
       if (!order) {
         const text = `⚠️ *Order Not Found*\nPlease browse our catalog to place a new order.`;
         return { responseText: text };
       }
 
-      const prod = db.products.find(p => p.id === order.product_id);
-      let deliveredContent = '';
-      let downloadUrl = '';
+      // Check if already delivered
+      if (order.status === 'DELIVERED' && order.delivered_content) {
+        let text = `🎉 *Payment Confirmed & Delivered!*\n\n`;
+        text += `🧾 *Order ID:* \`${order.id}\`\n`;
+        text += `📦 *Package:* ${order.product_name}\n`;
+        text += `💵 *Total:* ${order.currency} ${order.total_amount}\n\n`;
+        text += `${order.delivered_content}\n\n`;
+        text += `_Your order has been recorded in /orders for future access._`;
 
-      if (prod?.delivery_type === 'LICENSE_KEY' || prod?.delivery_type === 'SERIAL_KEY') {
-        const availableKey = db.license_keys.find(k => k.product_id === prod.id && !k.is_redeemed);
-        if (availableKey) {
-          availableKey.is_redeemed = true;
-          availableKey.redeemed_by_customer_id = customer.id;
-          availableKey.redeemed_at = nowStr;
-          availableKey.order_id = orderId;
-          deliveredContent = `🔑 *Your License Key:*\n\`${availableKey.license_key}\``;
-          prod.stock_count = Math.max(0, prod.stock_count - 1);
-        } else {
-          deliveredContent = `🔑 *Serial Key Generated:*\n\`PROD-${Math.random().toString(36).substring(2, 10).toUpperCase()}-KEY\``;
+        const keyboard = [
+          [{ text: '🛍️ Shop More', callback_data: 'action:PRODUCTS_LIST:ALL' }],
+          [{ text: '🧾 My Orders', callback_data: 'action:MY_ORDERS:VIEW' }],
+          [{ text: '🔙 Home', callback_data: 'action:HOME:HOME' }]
+        ];
+        if (!isSimulator && rawToken && !rawToken.includes('Sample')) {
+          await this.sendMessage(rawToken, chatId, text, keyboard);
         }
-      } else if (prod?.delivery_type === 'DIGITAL_FILE') {
-        const fileRecord = db.digital_files.find(f => f.product_id === prod.id);
-        const downloadToken = fileRecord?.download_token || CryptoService.generateRandomToken(12);
-        downloadUrl = `/api/downloads/${orderId}/${downloadToken}`;
-        deliveredContent = `📥 *Digital Asset Ready:* ${fileRecord?.original_filename || prod?.name || 'Asset'}\n\nClick link to download:\n${process.env.APP_URL || ''}${downloadUrl}`;
-      } else if (prod?.delivery_type === 'CUSTOM_MESSAGE') {
-        deliveredContent = `📩 *Access Message:*\n${prod.custom_message || 'Thank you for your purchase!'}`;
-      } else {
-        deliveredContent = `🔑 *Product Code:*\n\`SERIAL-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}\``;
+        return { responseText: text, keyboard, deliveredContent: order.delivered_content };
       }
 
-      order.status = 'DELIVERED';
-      order.delivered_content = deliveredContent;
-      order.download_url = downloadUrl || undefined;
-      order.payment_id = `instant_pay_${Date.now()}`;
-      order.updated_at = nowStr;
+      // Real Server-side Verification Check
+      const utrRef = (order.payment_id || '').replace(/^UTR_/, '');
+      const isVerified = (db.ledger_transactions || []).some(
+        t => t.status === 'CREDITED' && (t.order_id === order.id || (utrRef && t.transaction_id === utrRef))
+      ) || (db.webhook_events || []).some(
+        w => w.order_id === order.id && w.processed
+      );
 
-      customer.total_purchases += 1;
-      customer.total_spent += order.total_amount;
-      customer.last_purchase_at = nowStr;
-      db.save();
+      if (isVerified) {
+        // Atomic Key Assignment & Delivery
+        const prod = db.products.find(p => p.id === order.product_id);
+        let deliveredContent = '';
+        let downloadUrl = '';
 
-      let text = `🎉 *Payment Confirmed & Delivered!*\n\n`;
-      text += `🧾 *Order ID:* \`${orderId}\`\n`;
-      text += `📦 *Package:* ${order.product_name}\n`;
-      text += `💵 *Total:* ${order.currency} ${order.total_amount}\n\n`;
-      text += `${deliveredContent}\n\n`;
-      text += `_Your order has been recorded in /orders for future access._`;
+        if (prod?.delivery_type === 'LICENSE_KEY' || prod?.delivery_type === 'SERIAL_KEY') {
+          let productKey = (db.product_keys || []).find(
+            k => k.product_id === prod.id && k.status === 'AVAILABLE' && (!order.package_id || k.package_id === order.package_id)
+          );
+          if (!productKey) {
+            const fallbackKey = (db.license_keys || []).find(k => k.product_id === prod.id && !k.is_redeemed);
+            if (fallbackKey) {
+              fallbackKey.is_redeemed = true;
+              fallbackKey.redeemed_by_customer_id = customer.id;
+              fallbackKey.redeemed_at = nowStr;
+              fallbackKey.order_id = order.id;
+              productKey = {
+                id: fallbackKey.id,
+                product_id: fallbackKey.product_id,
+                key: fallbackKey.license_key,
+                status: 'SOLD',
+                created_at: fallbackKey.created_at,
+                sold_at: nowStr,
+                sold_to_user_id: customer.id,
+                order_id: order.id
+              };
+              db.product_keys.push(productKey);
+            }
+          }
+
+          if (productKey) {
+            productKey.status = 'SOLD';
+            productKey.sold_at = nowStr;
+            productKey.sold_to_user_id = customer.id;
+            productKey.order_id = order.id;
+            deliveredContent = `🔑 *Your License Key:*\n\`${productKey.key}\``;
+            prod.stock_count = Math.max(0, (prod.stock_count || 1) - 1);
+          } else {
+            deliveredContent = `🔑 *Product Key Reserved:*\n\`FZ-${Math.random().toString(36).substring(2, 10).toUpperCase()}-KEY\``;
+          }
+        } else if (prod?.delivery_type === 'DIGITAL_FILE') {
+          const fileRecord = db.digital_files.find(f => f.product_id === prod.id);
+          const downloadToken = fileRecord?.download_token || CryptoService.generateRandomToken(12);
+          downloadUrl = `/api/downloads/${order.id}/${downloadToken}`;
+          deliveredContent = `📥 *Digital Asset Ready:* ${fileRecord?.original_filename || prod?.name || 'Asset'}\n\nClick link to download:\n${process.env.APP_URL || ''}${downloadUrl}`;
+        } else {
+          deliveredContent = `📩 *Access Message:*\n${prod?.custom_message || 'Thank you for your verified payment!'}`;
+        }
+
+        order.status = 'DELIVERED';
+        order.delivered_content = deliveredContent;
+        order.download_url = downloadUrl || undefined;
+        order.key_delivered = deliveredContent;
+        order.updated_at = nowStr;
+
+        customer.total_purchases += 1;
+        customer.total_spent += order.total_amount;
+        customer.last_purchase_at = nowStr;
+        db.saveImmediately();
+
+        let text = `🎉 *Payment Confirmed & Delivered!*\n\n`;
+        text += `🧾 *Order ID:* \`${order.id}\`\n`;
+        text += `📦 *Package:* ${order.product_name}\n`;
+        text += `💵 *Total:* ${order.currency} ${order.total_amount}\n\n`;
+        text += `${deliveredContent}\n\n`;
+        text += `_Your order has been recorded in /orders for future access._`;
+
+        const keyboard = [
+          [{ text: '🛍️ Shop More', callback_data: 'action:PRODUCTS_LIST:ALL' }],
+          [{ text: '🧾 My Orders', callback_data: 'action:MY_ORDERS:VIEW' }],
+          [{ text: '🔙 Home', callback_data: 'action:HOME:HOME' }]
+        ];
+
+        if (!isSimulator && rawToken && !rawToken.includes('Sample')) {
+          await this.sendMessage(rawToken, chatId, text, keyboard);
+        }
+        return { responseText: text, keyboard, deliveredContent };
+      }
+
+      // If NOT verified: STRICT PAYMENT PENDING -> NO KEY
+      let text = `❌ *Payment Not Received*\n\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.\n\n`;
+      text += `🧾 *Order ID:* \`${order.id}\`\n`;
+      text += `💵 *Amount:* ${order.currency} ${order.total_amount}\n`;
+      text += `📌 *Status:* PENDING VERIFICATION\n\n`;
+      text += `_Security Rule: No product key can be delivered until settlement is confirmed on the official FZ PAY merchant account._`;
 
       const keyboard = [
-        [{ text: '🛍️ Shop More', callback_data: 'action:PRODUCTS_LIST:ALL' }],
-        [{ text: '🧾 My Orders', callback_data: 'action:MY_ORDERS:VIEW' }],
-        [{ text: '🔙 Home', callback_data: 'action:HOME:HOME' }]
+        [{ text: '🔎 [ VERIFY PAYMENT ]', callback_data: `action:VERIFY_PAYMENT:${order.id}` }],
+        [{ text: '📝 Submit UTR / Reference ID', callback_data: `action:SUBMIT_UTR:${order.id}` }],
+        [{ text: '🔙 Back to Products', callback_data: 'action:PRODUCTS_LIST:ALL' }]
       ];
 
       if (!isSimulator && rawToken && !rawToken.includes('Sample')) {
         await this.sendMessage(rawToken, chatId, text, keyboard);
       }
-      return { responseText: text, keyboard, deliveredContent };
+      return { responseText: text, keyboard };
     }
 
     // 15. Handle Prompt for Submitting UTR
@@ -1117,7 +1104,7 @@ export class TelegramService {
       const orderId = callbackData.replace('action:SUBMIT_UTR:', '').trim();
       const text = `📝 *Submit Payment Reference Number*\n\nPlease reply directly to this chat with your 12-digit UPI UTR Number or Transaction Reference for Order \`${orderId}\`.\n\n_Example:_ \`428192019283\``;
       const keyboard = [
-        [{ text: '⚡ Instant Pay (Test / Sandbox)', callback_data: `action:INSTANT_FULFILL:${orderId}` }],
+        [{ text: '🔎 [ VERIFY PAYMENT ]', callback_data: `action:VERIFY_PAYMENT:${orderId}` }],
         [{ text: '🔙 Back to Products', callback_data: 'action:PRODUCTS_LIST:ALL' }]
       ];
       if (!isSimulator && rawToken && !rawToken.includes('Sample')) {
