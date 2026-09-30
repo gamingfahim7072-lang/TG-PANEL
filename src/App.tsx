@@ -128,13 +128,8 @@ export function App() {
 
         try {
           const wRes = await api.getWallet();
-          if (wRes.wallet) {
+          if (wRes && wRes.wallet) {
             setWallet(wRes.wallet);
-            const isLocked = wRes.wallet.status === 'LOCKED' || wRes.wallet.kyc_status === 'NOT_SUBMITTED';
-            const isSuperAdmin = ['OWNER', 'SUPER ADMIN'].includes((res.user.role || '').toUpperCase());
-            if (isLocked && !isSuperAdmin) {
-              setShowKycModal(true);
-            }
           }
         } catch {}
       } else {

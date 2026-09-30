@@ -222,6 +222,9 @@ class ApiClient {
   public async getWalletDashboard() {
     return this.request<{
       success: boolean;
+      wallet_created?: boolean;
+      kyc_status?: string;
+      status?: string;
       wallet: Wallet;
       transactions: WalletTransaction[];
       botSales: {
@@ -250,7 +253,7 @@ class ApiClient {
     });
   }
 
-  public async submitKyc(payload: { fullName: string; aadhaarNumber: string; phone: string }) {
+  public async submitKyc(payload: { fullName: string; aadhaarNumber: string; phone: string; dob?: string }) {
     return this.request<{ success: boolean; message: string; wallet: Wallet }>(`/wallet/kyc-submit`, {
       method: 'POST',
       body: JSON.stringify(payload)

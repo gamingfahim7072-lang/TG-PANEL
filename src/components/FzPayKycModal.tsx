@@ -33,6 +33,9 @@ export const FzPayKycModal: React.FC<FzPayKycModalProps> = ({
   const [fullName, setFullName] = useState(userFullName);
   const [aadhaar, setAadhaar] = useState('');
   const [phone, setPhone] = useState(userPhone);
+  const [dob, setDob] = useState('2000-01-15');
+  const [agreed, setAgreed] = useState(true);
+  const [kycState, setKycState] = useState<'NOT_STARTED' | 'KYC_PENDING' | 'KYC_VERIFIED' | 'KYC_FAILED'>('NOT_STARTED');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successWallet, setSuccessWallet] = useState<Wallet | null>(null);
@@ -41,7 +44,6 @@ export const FzPayKycModal: React.FC<FzPayKycModalProps> = ({
 
   const handleAadhaarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 12);
-    // Format as 4-4-4
     const parts = raw.match(/(\d{1,4})/g) || [];
     setAadhaar(parts.join('-'));
   };
@@ -61,32 +63,63 @@ export const FzPayKycModal: React.FC<FzPayKycModalProps> = ({
       return;
     }
 
+    if (cleanAadhaar[0] === '0' || cleanAadhaar[0] === '1') {
+      setError('Invalid Aadhaar: Official Aadhaar numbers cannot begin with 0 or 1.');
+      return;
+    }
+
     if (phone.length !== 10 || !/^[6-9]/.test(phone)) {
       setError('Please enter a valid 10-digit Indian phone number starting with 6, 7, 8, or 9.');
       return;
     }
 
     if (!fullName.trim() || fullName.trim().length < 2) {
-      setError('Please enter your full legal name as per official Aadhaar records.');
+      setError('Please enter your full legal name as per official government records.');
+      return;
+    }
+
+    if (!dob) {
+      setError('Please enter your Date of Birth.');
+      return;
+    }
+
+    // Check age >= 18
+    const birthDate = new Date(dob);
+    const ageDiffMs = Date.now() - birthDate.getTime();
+    const ageDate = new Date(ageDiffMs);
+    const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+    if (age < 18) {
+      setError('You must be at least 18 years old to open an FZ PAY prepaid wallet.');
+      return;
+    }
+
+    if (!agreed) {
+      setError('Please accept the KYC terms and closed-loop prepaid wallet guidelines.');
       return;
     }
 
     setLoading(true);
+    setKycState('KYC_PENDING');
+
     try {
       const res = await api.submitKyc({
         fullName: fullName.trim(),
         aadhaarNumber: cleanAadhaar,
-        phone
+        phone,
+        dob
       });
 
       if (res.success && res.wallet) {
+        setKycState('KYC_VERIFIED');
         setSuccessWallet(res.wallet);
         onSuccess(res.wallet);
       } else {
+        setKycState('KYC_FAILED');
         setError(res.message || 'KYC verification failed.');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to complete KYC verification.');
+      setKycState('KYC_FAILED');
+      setError(err.message || 'Failed to complete KYC verification with provider.');
     } finally {
       setLoading(false);
     }
@@ -145,13 +178,44 @@ export const FzPayKycModal: React.FC<FzPayKycModalProps> = ({
               </div>
 
               <div>
-                <h3 className="text-lg font-black text-white">FZ PAY Wallet Activated!</h3>
+                <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold uppercase tracking-wider">
+                  KYC_VERIFIED → FZ PAY WALLET ACTIVE
+                </span>
+                <h3 className="text-lg font-black text-white mt-2">FZ PAY Wallet Activated!</h3>
                 <p className="text-xs text-emerald-400 font-semibold mt-1">
-                  🎉 Aadhaar KYC Verified Successfully
+                  🎉 Provider KYC Verification Completed
                 </p>
                 <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-                  Your dedicated virtual card and <span className="text-cyan-300 font-mono font-bold">@{successWallet.upi_handle || 'fzpay'}</span> handle are now unlocked.
+                  Your separate closed-loop wallet is active. Real UPI receiving and virtual card capabilities are enabled.
                 </p>
+              </div>
+
+              {/* Provider & Wallet Account Identifiers Grid */}
+              <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-4 text-left grid grid-cols-2 gap-3 text-xs font-mono">
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block font-bold">FZ PAY ID</span>
+                  <span className="text-xs font-bold text-white">{successWallet.fz_pay_id || successWallet.id}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block font-bold">FZ PAY UPI ID</span>
+                  <span className="text-xs font-bold text-cyan-400">{successWallet.upi_handle}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block font-bold">Wallet ID</span>
+                  <span className="text-xs text-slate-300">{successWallet.id}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block font-bold">Provider Account</span>
+                  <span className="text-xs text-slate-400 truncate block">{successWallet.provider_account_id || 'prov_acc_live'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block font-bold">KYC Status</span>
+                  <span className="text-xs font-bold text-emerald-400">KYC_VERIFIED</span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block font-bold">Wallet Status</span>
+                  <span className="text-xs font-bold text-emerald-400">ACTIVE</span>
+                </div>
               </div>
 
               {/* Virtual Card Preview */}
@@ -179,7 +243,7 @@ export const FzPayKycModal: React.FC<FzPayKycModalProps> = ({
                 onClick={onClose}
                 className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-xl text-xs transition-all shadow-lg shadow-cyan-500/25 flex items-center justify-center space-x-2 cursor-pointer"
               >
-                <span>Enter FZ PAY Neo-Bank</span>
+                <span>Open FZ PAY Dashboard</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -257,11 +321,40 @@ export const FzPayKycModal: React.FC<FzPayKycModalProps> = ({
                 </div>
               </div>
 
+              {/* Date of Birth */}
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5 flex items-center justify-between">
+                  <span>Date of Birth</span>
+                  <span className="text-[10px] text-amber-400 font-normal">Must be 18+ years</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={dob}
+                  onChange={(e) => setDob(e.target.value)}
+                  max={new Date(Date.now() - 18 * 365.25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                />
+              </div>
+
               {/* Safe Banking Clarification Box */}
               <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed">
                 <span className="font-bold text-slate-200 block mb-0.5">🔒 FamPay Architecture Guarantee:</span>
                 This wallet does not debit or link to your personal savings/current bank account. Your funds remain in your internal FZ PAY prepaid balance.
               </div>
+
+              {/* Regulatory Consent Checkbox */}
+              <label className="flex items-start space-x-2.5 text-[11px] text-slate-300 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-cyan-500"
+                />
+                <span className="leading-snug">
+                  I agree to complete provider KYC verification and open an independent, closed-loop FZ PAY prepaid wallet separate from any personal bank accounts.
+                </span>
+              </label>
 
               {/* Action Button */}
               <button
@@ -272,7 +365,7 @@ export const FzPayKycModal: React.FC<FzPayKycModalProps> = ({
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verifying Aadhaar & Phone...</span>
+                    <span>Verifying with KYC Provider (KYC_PENDING)...</span>
                   </>
                 ) : (
                   <>

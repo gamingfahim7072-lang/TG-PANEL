@@ -278,8 +278,13 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
           deliveredKey: res.deliveredKey,
           wallet: res.wallet
         });
+        const isSub = checkoutType === 'SUBSCRIPTION' || checkoutType === 'BOT_EDITOR';
+        const successText = isSub
+          ? '✅ Payment Successfully Received\n💎 Subscription Activated Successfully'
+          : (res.deliveredKey ? '✅ Payment Successfully Received\n🔑 Product Key Delivered' : '✅ Payment Successfully Received\n📦 Product Delivered');
+
         setVerifyMessage({
-          text: '✅ Payment Successfully Verified\n🎉 Your subscription has been activated successfully.',
+          text: res.message || successText,
           isSuccess: true
         });
         onSuccess({
@@ -290,16 +295,25 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
           order: res.order
         });
       } else {
-        // Legitimate rule: Do NOT assume paid! Return professional pending/failure notice
+        const isSub = checkoutType === 'SUBSCRIPTION' || checkoutType === 'BOT_EDITOR';
+        const unverifiedText = isSub
+          ? '❌ Payment Verification Unsuccessful\nPayment was not received. Please complete the payment before activating your subscription.'
+          : '❌ Payment Verification Unsuccessful\nPayment was not received or could not be verified. Please complete the payment and try again.';
+
         setVerifyMessage({
-          text: '❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.',
+          text: res.message || unverifiedText,
           isSuccess: false
         });
         setPaymentStatus(res.status === 'EXPIRED' ? 'EXPIRED' : 'PENDING');
       }
     } catch (err: any) {
+      const isSub = checkoutType === 'SUBSCRIPTION' || checkoutType === 'BOT_EDITOR';
+      const errorText = isSub
+        ? '❌ Payment Verification Unsuccessful\nPayment was not received. Please complete the payment before activating your subscription.'
+        : '❌ Payment Verification Unsuccessful\nPayment was not received or could not be verified. Please complete the payment and try again.';
+
       setVerifyMessage({
-        text: '❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.',
+        text: err.message || errorText,
         isSuccess: false
       });
     } finally {
@@ -718,11 +732,12 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
                           {verifying ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Querying Payment Provider...</span>
+                              <span>Verifying Payment...</span>
                             </>
                           ) : (
                             <>
-                              <span>🔎 PAYMENT VERIFY</span>
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              <span>VERIFY PAYMENT</span>
                             </>
                           )}
                         </button>

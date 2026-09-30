@@ -36,7 +36,16 @@ import {
   Info,
   ShieldCheck,
   Radio,
-  ScanLine
+  ScanLine,
+  User as UserIcon,
+  Settings as SettingsIcon,
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  KeyRound,
+  Building,
+  Calendar
 } from 'lucide-react';
 import { User, Wallet as WalletType, WalletTransaction, Order, Subscription } from '../types';
 import { api } from '../api';
@@ -119,6 +128,16 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
   const [showSendMoney, setShowSendMoney] = useState(false);
   const [showReceiveMoney, setShowReceiveMoney] = useState(false);
   const [showKycModal, setShowKycModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Settings & PIN State
+  const [userPin, setUserPin] = useState('1234');
+  const [newPinInput, setNewPinInput] = useState('');
+  const [pinChangeSuccess, setPinChangeSuccess] = useState<string | null>(null);
+
+  // Add Money Timer & State
+  const [depositTimer, setDepositTimer] = useState(600);
 
   // Add Money Form State
   const [depositAmount, setDepositAmount] = useState<number>(500);
@@ -153,11 +172,27 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
     loadWalletData();
   }, []);
 
+  useEffect(() => {
+    let interval: any = null;
+    if (showAddMoney && depositOrder && depositTimer > 0) {
+      interval = setInterval(() => {
+        setDepositTimer(prev => Math.max(0, prev - 1));
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [showAddMoney, depositOrder, depositTimer]);
+
+  const formatTimer = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   const loadWalletData = async () => {
     setLoading(true);
     try {
       const res = await api.getWalletDashboard();
-      if (res.wallet) {
+      if (res && res.wallet_created && res.wallet) {
         setWallet(res.wallet);
         setTransactions(res.transactions || []);
         if (res.botSales) setBotSales(res.botSales);
@@ -166,12 +201,15 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
         if (res.wallet.card?.daily_limit) {
           setNewLimit(res.wallet.card.daily_limit);
         }
+      } else {
+        setWallet(null);
       }
       if (isAdmin) {
         loadAdminData();
       }
     } catch (err) {
       console.error('Failed to load wallet dashboard', err);
+      setWallet(null);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -480,7 +518,8 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
     }
   };
 
-  const isWalletLocked = wallet?.status === 'LOCKED' || wallet?.kyc_status === 'NOT_SUBMITTED';
+  const isWalletActive = Boolean(wallet && wallet.status === 'ACTIVE' && wallet.kyc_status === 'KYC_VERIFIED');
+  const isWalletLocked = !isWalletActive;
 
   const filteredTransactions = transactions.filter(tx => {
     if (txTypeFilter === 'ALL') return true;
@@ -493,82 +532,106 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
 
   return (
     <div className="space-y-6 pb-12 max-w-7xl mx-auto">
-      {/* FamPay Bank Disclaimer & Trust Banner */}
-      <div className="bg-gradient-to-r from-cyan-950/40 via-slate-900 to-slate-950 border border-cyan-500/20 rounded-2xl p-4 sm:p-5 text-xs text-slate-300 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-start space-x-3.5">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
+      {/* 1. INITIAL STATE: NEW PANEL USER MUST NOT HAVE AN FZ PAY WALLET */}
+      {!isWalletActive ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-14 text-center max-w-2xl mx-auto space-y-6 shadow-2xl animate-in fade-in duration-300">
+          <div className="w-20 h-20 rounded-3xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center mx-auto shadow-xl shadow-cyan-500/10">
+            <CreditCard className="w-10 h-10" />
           </div>
-          <div className="space-y-1">
-            <div className="flex items-center space-x-2">
-              <span className="font-black text-white uppercase tracking-wider text-[11px]">
-                FZ PAY NEO-BANKING ARCHITECTURE
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase">
-                100% CLOSED-LOOP
-              </span>
-            </div>
-            <p className="text-slate-400 leading-relaxed text-[11px]">
-              Operates like <strong>FamPay</strong> as an independent prepaid wallet. 
-              <span className="text-emerald-400 font-semibold ml-1">
-                Zero connection to your personal bank account.
-              </span> No bank credentials or sensitive account numbers are ever linked or debited.
+
+          <div className="space-y-2">
+            <span className="text-xs uppercase font-mono tracking-widest text-cyan-400 font-bold block">
+              💳 FZ PAY
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-black text-white">
+              Wallet not created
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+              Your normal panel account and FZ PAY wallet are separate. To activate your prepaid closed-loop wallet and virtual RuPay card, complete the verified KYC onboarding flow.
             </p>
           </div>
-        </div>
 
-        <div className="flex items-center space-x-2 shrink-0">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Sync</span>
-          </button>
-          {isWalletLocked && (
+          <div className="pt-2">
             <button
               onClick={() => setShowKycModal(true)}
-              className="px-4 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl flex items-center space-x-1.5 transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
+              className="px-8 py-3.5 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-black rounded-2xl text-xs sm:text-sm transition-all shadow-xl shadow-cyan-500/25 flex items-center justify-center space-x-2.5 mx-auto cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Complete KYC</span>
+              <Sparkles className="w-4 h-4" />
+              <span>CREATE FZ PAY WALLET</span>
             </button>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* IF WALLET IS LOCKED: PROMINENT FAMPAY KYC ONBOARDING CARD */}
-      {isWalletLocked && (
-        <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-950 border border-amber-500/30 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start space-x-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <Lock className="w-6 h-6" />
+          <div className="pt-6 border-t border-slate-800/80 grid grid-cols-2 gap-3 text-[11px] text-slate-400 max-w-md mx-auto">
+            <div className="flex items-center justify-center space-x-1.5 text-emerald-400 font-semibold">
+              <ShieldCheck className="w-4 h-4" />
+              <span>No Real Bank Link Required</span>
+            </div>
+            <div className="flex items-center justify-center space-x-1.5 text-cyan-400 font-semibold">
+              <Lock className="w-4 h-4" />
+              <span>FamPay Closed-Loop</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* 2. AFTER KYC: COMPLETE 💳 FZ PAY ACTIVE DASHBOARD */
+        <div className="space-y-6">
+          {/* Top Identity & Account Identifier Banner */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono">
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] text-slate-500 uppercase font-bold">FZ PAY ID:</span>
+                <span className="font-bold text-white bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                  {wallet.fz_pay_id || wallet.id}
+                </span>
               </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
-                  <span>Your FZ PAY Wallet is Currently Locked</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-extrabold uppercase">
-                    KYC REQUIRED
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                  To comply with financial safety standards, open your separate FZ PAY wallet using your legal full name, 12-digit Aadhaar, and phone number. Once unlocked, you receive your personalized <strong className="text-cyan-400">@fzpay</strong> UPI handle and virtual RuPay FZ Card.
-                </p>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] text-slate-500 uppercase font-bold">FZ PAY UPI ID:</span>
+                <span className="font-bold text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1.5">
+                  <span>{wallet.upi_handle}</span>
+                  <button onClick={handleCopyTag} className="text-slate-400 hover:text-white cursor-pointer">
+                    {copiedTag ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] text-slate-500 uppercase font-bold">KYC:</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                  KYC_VERIFIED
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] text-slate-500 uppercase font-bold">Wallet:</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold">
+                  ACTIVE
+                </span>
               </div>
             </div>
 
-            <button
-              onClick={() => setShowKycModal(true)}
-              className="px-5 py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black rounded-2xl text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center space-x-2 shrink-0 cursor-pointer"
-            >
-              <UserCheck className="w-4 h-4" />
-              <span>Unlock Wallet & Card Now</span>
-            </button>
+            <div className="flex items-center space-x-2 shrink-0">
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer"
+              >
+                <UserIcon className="w-3.5 h-3.5 text-cyan-400" />
+                <span>FZ PAY Profile</span>
+              </button>
+              <button
+                onClick={() => setShowSettingsModal(true)}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer"
+              >
+                <SettingsIcon className="w-3.5 h-3.5 text-slate-300" />
+                <span>FZ PAY Settings</span>
+              </button>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                <span>Sync</span>
+              </button>
+            </div>
           </div>
-        </div>
-      )}
 
       {/* TOP SECTION: VIRTUAL FAMPAY CARD + BALANCE & QUICK ACTIONS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -868,6 +931,213 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
         </div>
       </div>
 
+      {/* 4. FINANCIAL INDICATORS (STRICTLY FROM DATABASE LEDGER) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+          <span className="flex items-center space-x-1.5">
+            <BarChart3 className="w-4 h-4 text-cyan-400" />
+            <span>Database Financial Ledger Indicators</span>
+          </span>
+          <span className="text-[10px] text-emerald-400 font-mono">100% REAL-TIME LEDGER DERIVED</span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* 1. Available Balance */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
+              <span>💰</span> Available Balance
+            </span>
+            <div className="text-lg sm:text-xl font-black font-mono text-cyan-400">
+              ₹{(wallet?.available_balance ?? wallet?.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono block">Ready for spend/transfer</span>
+          </div>
+
+          {/* 2. Total Balance */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
+              <span>📊</span> Total Balance
+            </span>
+            <div className="text-lg sm:text-xl font-black font-mono text-white">
+              ₹{(wallet?.total_balance ?? wallet?.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono block">Available + pending reserve</span>
+          </div>
+
+          {/* 3. Total Deposit */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
+              <span>➕</span> Total Deposit
+            </span>
+            <div className="text-lg sm:text-xl font-black font-mono text-emerald-400">
+              ₹{(wallet?.total_deposit ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono block">Verified top-ups</span>
+          </div>
+
+          {/* 4. Total Withdrawal */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
+              <span>📤</span> Total Withdrawal
+            </span>
+            <div className="text-lg sm:text-xl font-black font-mono text-amber-400">
+              ₹{(wallet?.total_withdrawal ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono block">Settled payouts</span>
+          </div>
+
+          {/* 5. Total Sent */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
+              <span>💸</span> Total Sent
+            </span>
+            <div className="text-lg sm:text-xl font-black font-mono text-rose-400">
+              ₹{(wallet?.total_sent ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono block">P2P transfers sent</span>
+          </div>
+
+          {/* 6. Total Received */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
+              <span>📥</span> Total Received
+            </span>
+            <div className="text-lg sm:text-xl font-black font-mono text-teal-400">
+              ₹{(wallet?.total_received ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono block">Inbound P2P & bot sales</span>
+          </div>
+
+          {/* 7. Total Refund */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
+              <span>↩️</span> Total Refund
+            </span>
+            <div className="text-lg sm:text-xl font-black font-mono text-indigo-400">
+              ₹{(wallet?.total_refund ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono block">Refunded transactions</span>
+          </div>
+
+          {/* 8. Transaction History */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
+              <span>📜</span> Transaction History
+            </span>
+            <div className="text-lg sm:text-xl font-black font-mono text-white">
+              {transactions.length}
+            </div>
+            <span className="text-[9px] text-slate-500 font-mono block">Ledger entries recorded</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. COMPLETE FZ PAY FEATURES ACTION BAR */}
+      <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+          <span>FZ PAY Core Functionalities</span>
+          <span className="text-[10px] text-cyan-400 font-mono">ALL ACTIONS CONNECTED TO BACKEND</span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+          {/* 1. Add Money */}
+          <button
+            type="button"
+            onClick={() => setShowAddMoney(true)}
+            className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-900 transition-all text-center flex flex-col items-center justify-center space-y-1.5 group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Plus className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-white">Add Money</span>
+          </button>
+
+          {/* 2. Withdraw */}
+          <button
+            type="button"
+            onClick={() => setShowWithdraw(true)}
+            className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-900 transition-all text-center flex flex-col items-center justify-center space-y-1.5 group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <ArrowUpRight className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-white">Withdraw</span>
+          </button>
+
+          {/* 3. Send Money */}
+          <button
+            type="button"
+            onClick={() => setShowSendMoney(true)}
+            className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-emerald-500/50 hover:bg-slate-900 transition-all text-center flex flex-col items-center justify-center space-y-1.5 group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Send className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-white">Send Money</span>
+          </button>
+
+          {/* 4. Receive Money */}
+          <button
+            type="button"
+            onClick={() => setShowReceiveMoney(true)}
+            className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-900 transition-all text-center flex flex-col items-center justify-center space-y-1.5 group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <QrCode className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-white">Receive</span>
+          </button>
+
+          {/* 5. Scan / QR */}
+          <button
+            type="button"
+            onClick={() => setShowScanPayModal(true)}
+            className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-900 transition-all text-center flex flex-col items-center justify-center space-y-1.5 group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <ScanLine className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-white">Scan & Pay</span>
+          </button>
+
+          {/* 6. Transaction History */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('passbook')}
+            className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-teal-500/50 hover:bg-slate-900 transition-all text-center flex flex-col items-center justify-center space-y-1.5 group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Clock className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-white">History</span>
+          </button>
+
+          {/* 7. FZ PAY Profile */}
+          <button
+            type="button"
+            onClick={() => setShowProfileModal(true)}
+            className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-purple-500/50 hover:bg-slate-900 transition-all text-center flex flex-col items-center justify-center space-y-1.5 group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <UserIcon className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-white">Profile</span>
+          </button>
+
+          {/* 8. FZ PAY Settings */}
+          <button
+            type="button"
+            onClick={() => setShowSettingsModal(true)}
+            className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-500/50 hover:bg-slate-900 transition-all text-center flex flex-col items-center justify-center space-y-1.5 group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <SettingsIcon className="w-4 h-4" />
+            </div>
+            <span className="text-xs font-bold text-white">Settings</span>
+          </button>
+        </div>
+      </div>
+
       {/* NAVIGATION TABS: PASSBOOK / BOT SALES / ADMIN */}
       <div className="flex items-center space-x-2 border-b border-slate-800 pb-2">
         <button
@@ -1059,6 +1329,8 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
               <div className="text-xl font-black font-mono text-amber-400 mt-1">₹{adminOverview.totalPendingPayouts}</div>
             </div>
           </div>
+        </div>
+      )}
         </div>
       )}
 

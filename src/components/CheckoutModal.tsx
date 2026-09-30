@@ -163,10 +163,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         setVerifiedSub(verifyRes.subscription);
         onSubscriptionUpdated(verifyRes.subscription);
       } else {
-        setError(`❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.`);
+        setError(verifyRes.message || `❌ Payment Verification Unsuccessful\nPayment was not received. Please complete the payment before activating your subscription.`);
       }
     } catch (err: any) {
-      setError(`❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.`);
+      setError(err.message || `❌ Payment Verification Unsuccessful\nPayment was not received. Please complete the payment before activating your subscription.`);
     } finally {
       setVerifying(false);
     }
@@ -215,10 +215,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-black text-white flex items-center gap-2">
-                    <span>✅ Payment Successfully Verified</span>
+                    <span>✅ Payment Successfully Received</span>
                   </h3>
                   <p className="text-xs text-emerald-300 font-bold mt-1">
-                    🎉 Your subscription has been activated successfully.
+                    💎 Subscription Activated Successfully
                   </p>
                   <p className="text-xs text-slate-300 mt-0.5">
                     Your payment was verified and processed through official FZ PAY rails. Your bot visual editor is fully unlocked!

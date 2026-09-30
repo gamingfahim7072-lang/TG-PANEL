@@ -65,16 +65,27 @@ export interface PaymentBankSettings {
 
 export interface Wallet {
   id: string; // e.g. "FZ-WAL-982104"
+  fz_pay_id?: string;
   owner_user_id: string;
   balance: number;
+  available_balance?: number;
+  total_balance?: number;
   pending_balance: number;
+  total_deposit?: number;
+  total_withdrawal?: number;
+  total_sent?: number;
+  total_received: number;
+  total_refund?: number;
+  total_spent: number;
   currency: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'LOCKED' | 'NOT_CREATED';
-  kyc_status?: 'NOT_SUBMITTED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+  status: 'NOT_CREATED' | 'NOT_STARTED' | 'KYC_PENDING' | 'KYC_VERIFIED' | 'KYC_FAILED' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED' | 'LOCKED';
+  kyc_status: 'NOT_STARTED' | 'KYC_PENDING' | 'KYC_VERIFIED' | 'KYC_FAILED';
   aadhaar_masked?: string;
   phone?: string;
   full_name?: string;
+  dob?: string;
   upi_handle?: string;
+  provider_account_id?: string;
   card?: {
     card_number: string;
     card_number_masked: string;
@@ -92,8 +103,6 @@ export interface Wallet {
     total_cashback_earned: number;
     last_scratched_date?: string;
   };
-  total_received: number;
-  total_spent: number;
   created_at: string;
   updated_at: string;
 }

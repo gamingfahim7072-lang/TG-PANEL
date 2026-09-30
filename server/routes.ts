@@ -1723,7 +1723,7 @@ apiRouter.post('/wallet/create', authenticate, async (req: AuthenticatedRequest,
 // Submit Aadhaar & Phone KYC verification to unlock FZ Wallet
 apiRouter.post('/wallet/kyc-submit', authenticate, rateLimit({ max: 10, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { fullName, aadhaarNumber, phone } = req.body;
+    const { fullName, aadhaarNumber, phone, dob } = req.body;
     if (!fullName || !aadhaarNumber || !phone) {
       return res.status(400).json({
         success: false,
@@ -1735,7 +1735,8 @@ apiRouter.post('/wallet/kyc-submit', authenticate, rateLimit({ max: 10, windowMs
       userId: req.user!.id,
       fullName,
       aadhaarNumber,
-      phone
+      phone,
+      dob
     });
 
     return res.json(result);

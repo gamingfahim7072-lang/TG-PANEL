@@ -314,11 +314,16 @@ export class RealPaymentEngine {
     }
 
     // 9. Payment is still PENDING (not yet received on provider rails)
+    const isSub = currentOrder.order_type === 'SUBSCRIPTION' || currentPayment.order_type === 'SUBSCRIPTION';
+    const pendingMsg = isSub
+      ? '❌ Payment Verification Unsuccessful\nPayment was not received. Please complete the payment before activating your subscription.'
+      : '❌ Payment Verification Unsuccessful\nPayment was not received or could not be verified. Please complete the payment and try again.';
+
     return {
       success: false,
       status: 'NOT_RECEIVED',
       configured: configCheck.configured,
-      message: '❌ Payment Not Received\nPlease complete the payment using the official FZ PAY UPI ID/QR and try again.'
+      message: pendingMsg
     };
   }
 
@@ -518,6 +523,7 @@ export class RealPaymentEngine {
           pending_balance: 0,
           currency: 'INR',
           status: 'ACTIVE',
+          kyc_status: 'KYC_VERIFIED',
           total_received: 0,
           total_spent: 0,
           created_at: nowStr,
@@ -587,10 +593,21 @@ export class RealPaymentEngine {
       metadata: { orderId: order.id, amount: payment.amount, provider, transactionId }
     });
 
+    let successMsg = '✅ Payment Successfully Received';
+    if (order.order_type === 'SUBSCRIPTION' || payment.order_type === 'SUBSCRIPTION') {
+      successMsg = '✅ Payment Successfully Received\n💎 Subscription Activated Successfully';
+    } else if (deliveredKeyStr) {
+      successMsg = '✅ Payment Successfully Received\n🔑 Product Key Delivered';
+    } else if (order.order_type === 'PRODUCT_KEY') {
+      successMsg = '✅ Payment Successfully Received\n📦 Product Delivered';
+    } else {
+      successMsg = '✅ Payment Successfully Received\n✅ Money Added Successfully';
+    }
+
     return {
       success: true,
       status: 'PAID',
-      message: '✅ Payment Successfully Verified\n🎉 Your subscription has been activated successfully.',
+      message: successMsg,
       orderId: order.id,
       paymentId: payment.id,
       transactionId,
