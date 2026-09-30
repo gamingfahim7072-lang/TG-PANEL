@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from './api';
-import { User, Subscription, TelegramBot, DashboardStats, Product, Order } from './types';
+import { User, Subscription, TelegramBot, DashboardStats, Product, Order, Wallet as WalletType } from './types';
 
 // Components
 import { Navbar } from './components/Navbar';
@@ -15,6 +15,7 @@ import { OrderDetailsModal } from './components/OrderDetailsModal';
 import { AuthModal } from './components/AuthModal';
 import { CinematicIntro } from './components/CinematicIntro';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { FzPayKycModal } from './components/FzPayKycModal';
 
 // Views
 import { DashboardView } from './views/DashboardView';
@@ -101,6 +102,8 @@ export function App() {
   }, [currentView]);
 
   // Modals state
+  const [wallet, setWallet] = useState<WalletType | null>(null);
+  const [showKycModal, setShowKycModal] = useState(false);
   const [showConnectBot, setShowConnectBot] = useState(false);
   const [showLiveSimulator, setShowLiveSimulator] = useState(false);
   const [showCreateProduct, setShowCreateProduct] = useState(false);
@@ -122,6 +125,18 @@ export function App() {
         setUser(res.user);
         setSubscription(res.subscription);
         await loadCoreData();
+
+        try {
+          const wRes = await api.getWallet();
+          if (wRes.wallet) {
+            setWallet(wRes.wallet);
+            const isLocked = wRes.wallet.status === 'LOCKED' || wRes.wallet.kyc_status === 'NOT_SUBMITTED';
+            const isSuperAdmin = ['OWNER', 'SUPER ADMIN'].includes((res.user.role || '').toUpperCase());
+            if (isLocked && !isSuperAdmin) {
+              setShowKycModal(true);
+            }
+          }
+        } catch {}
       } else {
         setUser(null);
       }
@@ -497,6 +512,18 @@ export function App() {
           setSelectedOrder(updated);
           loadCoreData();
         }}
+      />
+
+      <FzPayKycModal
+        isOpen={showKycModal}
+        onClose={() => setShowKycModal(false)}
+        onSuccess={unlockedWallet => {
+          setWallet(unlockedWallet);
+          setShowKycModal(false);
+          loadCoreData();
+        }}
+        userFullName={user?.full_name}
+        userPhone={user?.phone}
       />
     </div>
   );

@@ -239,6 +239,10 @@ class ApiClient {
     }>(`/wallet/my`);
   }
 
+  public async getWallet() {
+    return this.getWalletDashboard();
+  }
+
   public async createWallet(payload?: { fullName?: string; aadhaarNumber?: string; phone?: string }) {
     return this.request<{ success: boolean; message: string; wallet: Wallet }>(`/wallet/create`, {
       method: 'POST',
@@ -277,6 +281,24 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  }
+
+  public async addMoneyToWallet(payload: { amount: number; provider?: string }) {
+    return this.addMoney(payload);
+  }
+
+  public async getAdminWalletOverview() {
+    return this.request<{
+      success: boolean;
+      overview: {
+        totalWallets: number;
+        totalSystemBalance: number;
+        totalPendingPayouts: number;
+        wallets: any[];
+        transactions: WalletTransaction[];
+        withdrawals: any[];
+      };
+    }>(`/admin/fz-pay/overview`);
   }
 
   public async verifyDeposit(payload: { paymentId?: string; orderId?: string; transactionId?: string; provider?: string }) {
@@ -360,6 +382,65 @@ class ApiClient {
       withdrawal: any;
       wallet: Wallet;
     }>(`/wallet/withdraw`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async toggleCardFreeze() {
+    return this.request<{
+      success: boolean;
+      isFrozen: boolean;
+      message: string;
+      wallet: Wallet;
+    }>(`/wallet/card/toggle-freeze`, {
+      method: 'POST'
+    });
+  }
+
+  public async toggleOnlineTx() {
+    return this.request<{
+      success: boolean;
+      onlineEnabled: boolean;
+      message: string;
+      wallet: Wallet;
+    }>(`/wallet/card/toggle-online`, {
+      method: 'POST'
+    });
+  }
+
+  public async setCardDailyLimit(limit: number) {
+    return this.request<{
+      success: boolean;
+      dailyLimit: number;
+      message: string;
+      wallet: Wallet;
+    }>(`/wallet/card/set-limit`, {
+      method: 'POST',
+      body: JSON.stringify({ limit })
+    });
+  }
+
+  public async scratchReward() {
+    return this.request<{
+      success: boolean;
+      cashback: number;
+      coinsWon: number;
+      streak: number;
+      message: string;
+      wallet: Wallet;
+    }>(`/wallet/rewards/scratch`, {
+      method: 'POST'
+    });
+  }
+
+  public async scanAndPay(payload: { upiUri: string; amount: number; payeeName?: string; note?: string }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      txId: string;
+      wallet: Wallet;
+    }>(`/wallet/scan-pay`, {
       method: 'POST',
       body: JSON.stringify(payload)
     });

@@ -4,7 +4,6 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Send,
-  Download,
   Plus,
   RefreshCw,
   Copy,
@@ -16,24 +15,32 @@ import {
   QrCode,
   ExternalLink,
   X,
-  ChevronRight,
   Filter,
   Search,
   Crown,
   ShoppingBag,
-  Key,
   Smartphone,
-  Building,
   UserCheck,
-  TrendingUp,
   CreditCard,
   Sliders,
-  DollarSign,
   Lock,
-  Loader2
+  Loader2,
+  Eye,
+  EyeOff,
+  Sparkles,
+  Flame,
+  Gift,
+  Share2,
+  ChevronRight,
+  Zap,
+  Info,
+  ShieldCheck,
+  Radio,
+  ScanLine
 } from 'lucide-react';
 import { User, Wallet as WalletType, WalletTransaction, Order, Subscription } from '../types';
 import { api } from '../api';
+import { FzPayKycModal } from '../components/FzPayKycModal';
 
 interface FzPayViewProps {
   user: User;
@@ -63,7 +70,6 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
   });
   const [purchases, setPurchases] = useState<Order[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
 
   // Admin State
   const isAdmin = ['ADMIN', 'OWNER', 'SUPER ADMIN'].includes((user.role || '').toUpperCase());
@@ -78,24 +84,44 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [copiedId, setCopiedId] = useState(false);
-  const [activeTab, setActiveTab] = useState<'transactions' | 'sales' | 'purchases' | 'withdrawals' | 'admin'>('transactions');
+  const [copiedTag, setCopiedTag] = useState(false);
+  const [copiedCardNum, setCopiedCardNum] = useState(false);
+  const [activeTab, setActiveTab] = useState<'passbook' | 'card' | 'sales' | 'admin'>('passbook');
+
+  // FamCard Display Controls
+  const [showCardDetails, setShowCardDetails] = useState(false);
+  const [cardActionLoading, setCardActionLoading] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [newLimit, setNewLimit] = useState<number>(25000);
+
+  // Rewards State (Like FamPay Scratch Cards!)
+  const [showRewardModal, setShowRewardModal] = useState(false);
+  const [scratched, setScratched] = useState(false);
+  const [rewardWon, setRewardWon] = useState<{ cashback: number; coinsWon: number; message: string } | null>(null);
+  const [rewardLoading, setRewardLoading] = useState(false);
+
+  // Scan & Pay Modal State
+  const [showScanPayModal, setShowScanPayModal] = useState(false);
+  const [scanPayee, setScanPayee] = useState('');
+  const [scanAmount, setScanAmount] = useState<number>(150);
+  const [scanNote, setScanNote] = useState('');
+  const [scanPin, setScanPin] = useState('');
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanSuccess, setScanSuccess] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   // Filter State
   const [txTypeFilter, setTxTypeFilter] = useState<string>('ALL');
-  const [txStatusFilter, setTxStatusFilter] = useState<string>('ALL');
 
   // Modals
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showSendMoney, setShowSendMoney] = useState(false);
   const [showReceiveMoney, setShowReceiveMoney] = useState(false);
-  const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const [selectedWalletForAdj, setSelectedWalletForAdj] = useState<string>('');
+  const [showKycModal, setShowKycModal] = useState(false);
 
   // Add Money Form State
   const [depositAmount, setDepositAmount] = useState<number>(500);
-  const [depositProvider, setDepositProvider] = useState<'UPI' | 'SANDBOX'>('UPI');
   const [depositOrder, setDepositOrder] = useState<any>(null);
   const [depositLoading, setDepositLoading] = useState(false);
   const [depositVerifying, setDepositVerifying] = useState(false);
@@ -119,70 +145,9 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
   const [sendRecipientId, setSendRecipientId] = useState('');
   const [sendAmount, setSendAmount] = useState<number>(100);
   const [sendNote, setSendNote] = useState('');
-  const [sendConfirming, setSendConfirming] = useState(false);
   const [sendLoading, setSendLoading] = useState(false);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
-
-  // Admin Adjust State
-  const [adjAmount, setAdjAmount] = useState<number>(500);
-  const [adjType, setAdjType] = useState<'CREDIT' | 'DEBIT'>('CREDIT');
-  const [adjReason, setAdjReason] = useState('');
-  const [adjLoading, setAdjLoading] = useState(false);
-  const [adjError, setAdjError] = useState<string | null>(null);
-  const [adjSuccess, setAdjSuccess] = useState<string | null>(null);
-
-  // KYC Verification Form State (Aadhaar & Phone required)
-  const [kycFullName, setKycFullName] = useState(user.full_name || '');
-  const [kycAadhaar, setKycAadhaar] = useState('');
-  const [kycPhone, setKycPhone] = useState(user.phone || '');
-  const [kycLoading, setKycLoading] = useState(false);
-  const [kycError, setKycError] = useState<string | null>(null);
-  const [kycSuccess, setKycSuccess] = useState<string | null>(null);
-
-  const handleKycSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setKycError(null);
-    setKycSuccess(null);
-
-    const cleanAadhaar = kycAadhaar.replace(/[\s-]/g, '');
-    if (!/^\d{12}$/.test(cleanAadhaar)) {
-      setKycError('Invalid Aadhaar number. Please enter a valid 12-digit Aadhaar number.');
-      return;
-    }
-
-    const cleanPhone = kycPhone.replace(/[\s-+]/g, '').slice(-10);
-    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
-      setKycError('Invalid mobile phone number. Please enter a valid 10-digit Indian phone number.');
-      return;
-    }
-
-    if (!kycFullName.trim() || kycFullName.trim().length < 2) {
-      setKycError('Please enter your full legal name as per official Aadhaar records.');
-      return;
-    }
-
-    setKycLoading(true);
-    try {
-      const res = await api.submitKyc({
-        fullName: kycFullName.trim(),
-        aadhaarNumber: cleanAadhaar,
-        phone: cleanPhone
-      });
-
-      if (res.success) {
-        setKycSuccess('🎉 KYC Verified! Your separate FZ PAY Wallet has been created and unlocked.');
-        setWallet(res.wallet);
-        loadWalletData();
-      } else {
-        setKycError(res.message || 'KYC verification failed.');
-      }
-    } catch (err: any) {
-      setKycError(err.message || 'Failed to submit KYC verification.');
-    } finally {
-      setKycLoading(false);
-    }
-  };
 
   useEffect(() => {
     loadWalletData();
@@ -198,19 +163,28 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
         if (res.botSales) setBotSales(res.botSales);
         if (res.purchases) setPurchases(res.purchases);
         if (res.withdrawals) setWithdrawals(res.withdrawals);
-        if (res.subscriptions) setSubscriptions(res.subscriptions);
+        if (res.wallet.card?.daily_limit) {
+          setNewLimit(res.wallet.card.daily_limit);
+        }
       }
-
       if (isAdmin) {
-        const adminRes = await api.getAdminFzPayOverview();
-        if (adminRes.success) setAdminOverview(adminRes);
+        loadAdminData();
       }
-    } catch (err: any) {
-      console.error('Failed to load FZ PAY dashboard:', err);
+    } catch (err) {
+      console.error('Failed to load wallet dashboard', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  const loadAdminData = async () => {
+    try {
+      const res = await api.getAdminWalletOverview();
+      if (res.overview) {
+        setAdminOverview(res.overview);
+      }
+    } catch {}
   };
 
   const handleRefresh = () => {
@@ -218,91 +192,286 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
     loadWalletData();
   };
 
-  const handleCopyWalletId = () => {
-    if (!wallet) return;
-    navigator.clipboard.writeText(wallet.id);
-    setCopiedId(true);
-    setTimeout(() => setCopiedId(false), 2000);
+  const handleCopyTag = () => {
+    if (!wallet?.upi_handle) return;
+    navigator.clipboard.writeText(wallet.upi_handle);
+    setCopiedTag(true);
+    setTimeout(() => setCopiedTag(false), 2000);
   };
 
-  // Add Money: Step 1 -> Initiate
-  const handleInitiateAddMoney = async () => {
-    if (!depositAmount || depositAmount <= 0) {
-      setDepositError('Please enter a valid amount.');
-      return;
-    }
-    setDepositLoading(true);
-    setDepositError(null);
-    setDepositSuccess(null);
+  const handleCopyCard = () => {
+    if (!wallet?.card?.card_number) return;
+    navigator.clipboard.writeText(wallet.card.card_number.replace(/\s+/g, ''));
+    setCopiedCardNum(true);
+    setTimeout(() => setCopiedCardNum(false), 2000);
+  };
+
+  // Card Controls
+  const handleToggleFreeze = async () => {
+    setCardActionLoading(true);
     try {
-      const res = await api.addMoney({
-        amount: depositAmount,
-        provider: depositProvider
-      });
-      if (res.success) {
-        setDepositOrder(res);
+      const res = await api.toggleCardFreeze();
+      if (res.success && res.wallet) {
+        setWallet(res.wallet);
       }
     } catch (err: any) {
-      setDepositError(err.message || 'Failed to initiate deposit.');
+      alert(err.message || 'Failed to toggle card freeze.');
+    } finally {
+      setCardActionLoading(false);
+    }
+  };
+
+  const handleToggleOnline = async () => {
+    setCardActionLoading(true);
+    try {
+      const res = await api.toggleOnlineTx();
+      if (res.success && res.wallet) {
+        setWallet(res.wallet);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to toggle online transactions.');
+    } finally {
+      setCardActionLoading(false);
+    }
+  };
+
+  const handleSaveLimit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCardActionLoading(true);
+    try {
+      const res = await api.setCardDailyLimit(newLimit);
+      if (res.success && res.wallet) {
+        setWallet(res.wallet);
+        setShowLimitModal(false);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to set daily limit.');
+    } finally {
+      setCardActionLoading(false);
+    }
+  };
+
+  // Rewards: FamPay Mystery Scratch Card
+  const handleScratchReward = async () => {
+    setRewardLoading(true);
+    try {
+      const res = await api.scratchReward();
+      if (res.success && res.wallet) {
+        setRewardWon({
+          cashback: res.cashback,
+          coinsWon: res.coinsWon,
+          message: res.message
+        });
+        setScratched(true);
+        setWallet(res.wallet);
+        loadWalletData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to claim reward.');
+    } finally {
+      setRewardLoading(false);
+    }
+  };
+
+  // Scan & Pay Execution
+  const handleScanPaySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setScanError(null);
+    setScanSuccess(null);
+
+    if (!scanAmount || scanAmount <= 0) {
+      setScanError('Please enter a valid amount.');
+      return;
+    }
+
+    if ((wallet?.balance || 0) < scanAmount) {
+      setScanError(`Insufficient FZ PAY balance. Available: ₹${wallet?.balance || 0}`);
+      return;
+    }
+
+    if (scanPin.length !== 4) {
+      setScanError('Please enter your 4-digit FZ PAY security PIN (e.g. 1234).');
+      return;
+    }
+
+    setScanLoading(true);
+    try {
+      const res = await api.scanAndPay({
+        upiUri: `upi://pay?pa=${encodeURIComponent(scanPayee || 'merchant@upi')}&am=${scanAmount}`,
+        amount: scanAmount,
+        payeeName: scanPayee || 'Verified Merchant',
+        note: scanNote
+      });
+
+      if (res.success && res.wallet) {
+        setScanSuccess(res.message);
+        setWallet(res.wallet);
+        loadWalletData();
+        setTimeout(() => {
+          setShowScanPayModal(false);
+          setScanSuccess(null);
+          setScanPayee('');
+          setScanAmount(150);
+          setScanPin('');
+          setScanNote('');
+        }, 2200);
+      } else {
+        setScanError(res.message || 'Payment failed.');
+      }
+    } catch (err: any) {
+      setScanError(err.message || 'Scan & Pay transaction failed.');
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  // Add Money (Deposit)
+  const handleInitiateDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDepositError(null);
+    setDepositSuccess(null);
+    setDepositLoading(true);
+
+    try {
+      const res = await api.addMoneyToWallet({
+        amount: depositAmount,
+        provider: 'UPI'
+      });
+
+      if (res.success) {
+        setDepositOrder(res);
+      } else {
+        setDepositError('Failed to initiate deposit.');
+      }
+    } catch (err: any) {
+      setDepositError(err.message || 'Deposit initiation failed.');
     } finally {
       setDepositLoading(false);
     }
   };
 
-  // Add Money: Step 2 -> Verify
   const handleVerifyDeposit = async () => {
     if (!depositOrder) return;
-    setDepositVerifying(true);
     setDepositError(null);
+    setDepositSuccess(null);
+    setDepositVerifying(true);
+
     try {
       const res = await api.verifyDeposit({
-        paymentId: depositOrder.paymentId,
         orderId: depositOrder.orderId,
+        paymentId: depositOrder.paymentId,
         transactionId: depositUtr.trim() || undefined,
-        provider: depositProvider
+        provider: 'UPI'
       });
-      if (res.success) {
-        setDepositSuccess(res.message || 'Deposit confirmed successfully!');
+
+      if (res.success && res.wallet) {
+        setDepositSuccess(`✅ Success! ₹${depositOrder.amount} added to your FZ PAY wallet.`);
         setWallet(res.wallet);
-        setDepositOrder(null);
-        setDepositUtr('');
         loadWalletData();
+        setTimeout(() => {
+          setShowAddMoney(false);
+          setDepositOrder(null);
+          setDepositUtr('');
+          setDepositSuccess(null);
+        }, 2000);
+      } else {
+        setDepositError(res.message || 'Payment not verified. Please complete transfer.');
       }
     } catch (err: any) {
-      setDepositError(err.message || 'Deposit verification failed. Please try again.');
+      setDepositError(err.message || 'Deposit verification failed.');
     } finally {
       setDepositVerifying(false);
     }
   };
 
-  // Withdraw Submit
-  const handleWithdrawSubmit = async (e: React.FormEvent) => {
+  // P2P Send Money
+  const handleSendMoney = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSendError(null);
+    setSendSuccess(null);
+
+    if (!sendRecipientId.trim()) {
+      setSendError('Please enter recipient FZ PAY @tag, phone number, or wallet ID.');
+      return;
+    }
+
+    if (!sendAmount || sendAmount <= 0) {
+      setSendError('Please enter a valid transfer amount.');
+      return;
+    }
+
+    if ((wallet?.balance || 0) < sendAmount) {
+      setSendError(`Insufficient balance. You have ₹${wallet?.balance || 0} available.`);
+      return;
+    }
+
+    setSendLoading(true);
+    try {
+      const res = await api.sendMoney({
+        recipientWalletId: sendRecipientId.trim(),
+        amount: sendAmount,
+        note: sendNote.trim() || undefined
+      });
+
+      if (res.success) {
+        setSendSuccess(`🎉 ₹${sendAmount} sent successfully to ${sendRecipientId}!`);
+        if (res.senderWallet) setWallet(res.senderWallet);
+        loadWalletData();
+        setTimeout(() => {
+          setShowSendMoney(false);
+          setSendRecipientId('');
+          setSendAmount(100);
+          setSendNote('');
+          setSendSuccess(null);
+        }, 2000);
+      } else {
+        setSendError(res.message || 'Transfer failed.');
+      }
+    } catch (err: any) {
+      setSendError(err.message || 'Transfer failed. Check recipient details.');
+    } finally {
+      setSendLoading(false);
+    }
+  };
+
+  // Withdraw
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWithdrawError(null);
+    setWithdrawSuccess(null);
+
     if (!withdrawAmount || withdrawAmount < 100) {
       setWithdrawError('Minimum withdrawal amount is ₹100.');
       return;
     }
+
+    if ((wallet?.balance || 0) < withdrawAmount) {
+      setWithdrawError(`Insufficient balance. Available: ₹${wallet?.balance || 0}`);
+      return;
+    }
+
     setWithdrawLoading(true);
-    setWithdrawError(null);
-    setWithdrawSuccess(null);
     try {
       const res = await api.withdrawMoney({
         amount: withdrawAmount,
         method: withdrawMethod,
-        upiId: withdrawMethod === 'UPI' ? withdrawUpiId.trim() : undefined,
-        bankName: withdrawMethod === 'BANK_TRANSFER' ? withdrawBankName.trim() : undefined,
-        accountNumber: withdrawMethod === 'BANK_TRANSFER' ? withdrawAccount.trim() : undefined,
-        ifsc: withdrawMethod === 'BANK_TRANSFER' ? withdrawIfsc.trim() : undefined,
-        notes: withdrawNotes.trim() || undefined
+        upiId: withdrawMethod === 'UPI' ? withdrawUpiId : undefined,
+        bankName: withdrawMethod === 'BANK_TRANSFER' ? withdrawBankName : undefined,
+        accountNumber: withdrawMethod === 'BANK_TRANSFER' ? withdrawAccount : undefined,
+        ifsc: withdrawMethod === 'BANK_TRANSFER' ? withdrawIfsc : undefined,
+        notes: withdrawNotes
       });
+
       if (res.success) {
-        setWithdrawSuccess(res.message);
-        setWallet(res.wallet);
+        setWithdrawSuccess('✅ Payout request submitted! Funds will settle to your destination.');
+        if (res.wallet) setWallet(res.wallet);
         loadWalletData();
         setTimeout(() => {
           setShowWithdraw(false);
           setWithdrawSuccess(null);
-        }, 1500);
+        }, 2000);
+      } else {
+        setWithdrawError(res.message || 'Withdrawal failed.');
       }
     } catch (err: any) {
       setWithdrawError(err.message || 'Withdrawal request failed.');
@@ -311,1427 +480,1053 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
     }
   };
 
-  // Send Money Submit
-  const handleSendMoneySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sendRecipientId.trim() || !sendAmount || sendAmount <= 0) {
-      setSendError('Please provide a valid recipient Wallet ID and amount.');
-      return;
-    }
-    setSendLoading(true);
-    setSendError(null);
-    setSendSuccess(null);
-    try {
-      const res = await api.sendMoney({
-        recipientWalletId: sendRecipientId.trim(),
-        amount: sendAmount,
-        note: sendNote.trim() || undefined
-      });
-      if (res.success) {
-        setSendSuccess(res.message);
-        setWallet(res.senderWallet);
-        setSendConfirming(false);
-        loadWalletData();
-        setTimeout(() => {
-          setShowSendMoney(false);
-          setSendSuccess(null);
-          setSendRecipientId('');
-          setSendNote('');
-        }, 1500);
-      }
-    } catch (err: any) {
-      setSendError(err.message || 'Transfer failed.');
-    } finally {
-      setSendLoading(false);
-    }
-  };
+  const isWalletLocked = wallet?.status === 'LOCKED' || wallet?.kyc_status === 'NOT_SUBMITTED';
 
-  // Admin Process Withdrawal
-  const handleAdminWithdrawalAction = async (id: string, action: 'APPROVE' | 'REJECT') => {
-    try {
-      const notes = prompt(`Optional ${action} notes / transaction ref:`) || undefined;
-      const res = await api.adminProcessWithdrawal(id, {
-        action,
-        referenceId: action === 'APPROVE' ? `BANK-TXN-${Date.now()}` : undefined,
-        adminNotes: notes
-      });
-      if (res.success) {
-        alert(res.message);
-        loadWalletData();
-      }
-    } catch (err: any) {
-      alert(err.message || 'Failed to process withdrawal.');
-    }
-  };
-
-  // Admin Adjust Wallet Submit
-  const handleAdminAdjustSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedWalletForAdj || !adjAmount || !adjReason.trim()) {
-      setAdjError('Wallet ID, amount, and reason are required.');
-      return;
-    }
-    setAdjLoading(true);
-    setAdjError(null);
-    setAdjSuccess(null);
-    try {
-      const res = await api.adminAdjustWallet({
-        walletId: selectedWalletForAdj,
-        amount: adjAmount,
-        type: adjType,
-        reason: adjReason.trim()
-      });
-      if (res.success) {
-        setAdjSuccess(res.message);
-        loadWalletData();
-        setTimeout(() => {
-          setShowAdjustModal(false);
-          setAdjSuccess(null);
-          setAdjReason('');
-        }, 1200);
-      }
-    } catch (err: any) {
-      setAdjError(err.message || 'Adjustment failed.');
-    } finally {
-      setAdjLoading(false);
-    }
-  };
-
-  // Filter transactions
-  const filteredTxs = transactions.filter(t => {
-    if (txTypeFilter !== 'ALL' && t.type !== txTypeFilter) return false;
-    if (txStatusFilter !== 'ALL' && t.status !== txStatusFilter) return false;
+  const filteredTransactions = transactions.filter(tx => {
+    if (txTypeFilter === 'ALL') return true;
+    if (txTypeFilter === 'SEND' && tx.type === 'SEND') return true;
+    if (txTypeFilter === 'RECEIVE' && tx.type === 'RECEIVE') return true;
+    if (txTypeFilter === 'DEPOSIT' && tx.type === 'DEPOSIT') return true;
+    if (txTypeFilter === 'STORE' && (tx.type === 'BOT_PRODUCT_PURCHASE' || tx.type === 'PREMIUM_PURCHASE')) return true;
     return true;
   });
 
   return (
-    <div className="p-3 sm:p-5 md:p-8 space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-        <div>
-          <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 via-sky-400 to-blue-600 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-cyan-500/20">
-              <Wallet className="w-5 h-5 text-slate-950" />
+    <div className="space-y-6 pb-12 max-w-7xl mx-auto">
+      {/* FamPay Bank Disclaimer & Trust Banner */}
+      <div className="bg-gradient-to-r from-cyan-950/40 via-slate-900 to-slate-950 border border-cyan-500/20 rounded-2xl p-4 sm:p-5 text-xs text-slate-300 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start space-x-3.5">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2">
+              <span className="font-black text-white uppercase tracking-wider text-[11px]">
+                FZ PAY NEO-BANKING ARCHITECTURE
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold uppercase">
+                100% CLOSED-LOOP
+              </span>
             </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                FZ PAY <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">INTERNAL WALLET</span>
-              </h1>
-              <p className="text-xs text-slate-400">Internal application wallet, instant key checkout & automated seller settlements</p>
-            </div>
+            <p className="text-slate-400 leading-relaxed text-[11px]">
+              Operates like <strong>FamPay</strong> as an independent prepaid wallet. 
+              <span className="text-emerald-400 font-semibold ml-1">
+                Zero connection to your personal bank account.
+              </span> No bank credentials or sensitive account numbers are ever linked or debited.
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 shrink-0">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer"
-            title="Refresh balances & transactions"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-cyan-400' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>Sync</span>
           </button>
-
-          {onOpenCheckout && (
+          {isWalletLocked && (
             <button
-              onClick={onOpenCheckout}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition-all shadow-md shadow-amber-500/10 cursor-pointer"
+              onClick={() => setShowKycModal(true)}
+              className="px-4 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl flex items-center space-x-1.5 transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
             >
-              <Crown className="w-3.5 h-3.5 text-amber-400" />
-              <span>Upgrade Plan</span>
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Complete KYC</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Main Premium Wallet Card */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0c1427] via-[#0f172a] to-[#070d18] border border-cyan-500/30 shadow-2xl shadow-cyan-500/10 p-5 sm:p-7">
-        {/* Glow backdrop effects */}
-        <div className="absolute -top-24 -right-24 w-72 h-72 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          {/* Left: Balances */}
-          <div className="space-y-4">
-            <div className="flex items-center space-x-3">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Available Balance</span>
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                wallet?.status === 'ACTIVE'
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-red-500/15 text-red-400 border border-red-500/30'
-              }`}>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse" />
-                {wallet?.status || 'ACTIVE'}
-              </span>
+      {/* IF WALLET IS LOCKED: PROMINENT FAMPAY KYC ONBOARDING CARD */}
+      {isWalletLocked && (
+        <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-950 border border-amber-500/30 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start space-x-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+                  <span>Your FZ PAY Wallet is Currently Locked</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-extrabold uppercase">
+                    KYC REQUIRED
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                  To comply with financial safety standards, open your separate FZ PAY wallet using your legal full name, 12-digit Aadhaar, and phone number. Once unlocked, you receive your personalized <strong className="text-cyan-400">@fzpay</strong> UPI handle and virtual RuPay FZ Card.
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-baseline space-x-2">
-              <span className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight">
-                ₹{(wallet?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className="text-xs font-bold text-cyan-400 font-mono">INR</span>
-            </div>
+            <button
+              onClick={() => setShowKycModal(true)}
+              className="px-5 py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black rounded-2xl text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center space-x-2 shrink-0 cursor-pointer"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Unlock Wallet & Card Now</span>
+            </button>
+          </div>
+        </div>
+      )}
 
-            {/* Wallet Info Tags */}
-            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
-              <div
-                onClick={handleCopyWalletId}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-700/80 hover:border-cyan-500/50 text-slate-300 font-mono text-[11px] cursor-pointer transition-all group"
-                title="Click to copy Wallet ID"
-              >
-                <span className="text-slate-400">Wallet ID:</span>
-                <span className="text-cyan-400 font-bold">{wallet?.id || 'FZ-WAL-PENDING'}</span>
-                {copiedId ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-white" />
+      {/* TOP SECTION: VIRTUAL FAMPAY CARD + BALANCE & QUICK ACTIONS */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* LEFT COLUMN: THE FAMCARD / VIRTUAL FZ CARD (5 cols) */}
+        <div className="lg:col-span-5 space-y-4">
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span className="flex items-center space-x-1.5">
+              <CreditCard className="w-4 h-4 text-cyan-400" />
+              <span>Virtual FZ Card</span>
+            </span>
+            <button
+              onClick={() => setShowCardDetails(!showCardDetails)}
+              className="text-cyan-400 hover:text-cyan-300 text-[11px] font-bold flex items-center space-x-1 cursor-pointer"
+            >
+              {showCardDetails ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <span>{showCardDetails ? 'Hide Details' : 'Show Details'}</span>
+            </button>
+          </div>
+
+          {/* FAMCARD VISUAL */}
+          <div className={`relative w-full aspect-[1.586/1] rounded-3xl p-5 sm:p-6 shadow-2xl transition-all duration-300 overflow-hidden select-none border ${
+            wallet?.card?.is_frozen
+              ? 'bg-gradient-to-br from-slate-900 via-blue-950/40 to-slate-900 border-blue-400/40 opacity-90'
+              : 'bg-gradient-to-br from-[#070b14] via-[#0f172a] to-[#1e1b4b] border-cyan-500/40 shadow-cyan-500/10'
+          }`}>
+            {/* Holographic Sheen / Background Shapes */}
+            <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-cyan-500/15 blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full bg-indigo-500/15 blur-2xl pointer-events-none" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-cyan-400/10 via-transparent to-transparent pointer-events-none" />
+
+            {/* Frozen Card Overlay Banner */}
+            {wallet?.card?.is_frozen && (
+              <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center space-y-2">
+                <div className="w-10 h-10 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <span className="text-xs font-black text-white tracking-widest uppercase">
+                  CARD TEMPORARILY FROZEN
+                </span>
+                <button
+                  onClick={handleToggleFreeze}
+                  disabled={cardActionLoading}
+                  className="px-3 py-1 bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold text-[11px] rounded-lg transition-all"
+                >
+                  Unfreeze Card
+                </button>
+              </div>
+            )}
+
+            <div className="relative h-full flex flex-col justify-between z-0">
+              {/* Card Top: Chip + Contactless + Brand */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  {/* EMV Metallic Chip */}
+                  <div className="w-10 h-7 rounded-md bg-gradient-to-tr from-amber-300 via-yellow-400 to-amber-200 border border-amber-200/60 shadow-inner flex items-center justify-center p-1">
+                    <div className="w-full h-full border border-amber-600/40 rounded-[2px] grid grid-cols-2" />
+                  </div>
+                  {/* Contactless waves */}
+                  <Radio className="w-5 h-5 text-cyan-400/80 -rotate-90" />
+                </div>
+
+                <div className="text-right">
+                  <span className="text-sm font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-300 font-mono">
+                    FZ PAY
+                  </span>
+                  <span className="text-[9px] text-slate-400 uppercase font-mono block tracking-widest">
+                    FAMCARD NEO
+                  </span>
+                </div>
+              </div>
+
+              {/* Card Center: 16-Digit Number */}
+              <div className="my-auto pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-base sm:text-lg font-black tracking-widest text-white drop-shadow">
+                    {showCardDetails
+                      ? wallet?.card?.card_number || '5399 2810 4912 3084'
+                      : wallet?.card?.card_number_masked || '5399 •••• •••• 3084'}
+                  </span>
+                  {showCardDetails && (
+                    <button
+                      onClick={handleCopyCard}
+                      className="text-slate-400 hover:text-cyan-400 p-1 transition-colors cursor-pointer"
+                    >
+                      {copiedCardNum ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
+                </div>
+
+                {/* CVV & Expiry */}
+                {showCardDetails && (
+                  <div className="flex items-center space-x-4 text-[10px] font-mono mt-1 text-slate-300">
+                    <div>
+                      <span className="text-slate-500 uppercase mr-1">EXP:</span>
+                      <strong className="text-cyan-300">{wallet?.card?.expiry || '09/31'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 uppercase mr-1">CVV:</span>
+                      <strong className="text-amber-300">{wallet?.card?.cvv || '742'}</strong>
+                    </div>
+                  </div>
                 )}
               </div>
 
-              {Boolean(wallet?.pending_balance && wallet.pending_balance > 0) && (
-                <div className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold text-[11px]">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>Pending: ₹{(wallet?.pending_balance || 0).toLocaleString('en-IN')}</span>
+              {/* Card Bottom: Holder Name + RuPay / FZ Logo */}
+              <div className="flex items-end justify-between text-xs pt-2">
+                <div>
+                  <span className="text-[9px] text-slate-500 font-mono uppercase tracking-widest block font-bold">
+                    CARDHOLDER
+                  </span>
+                  <span className="font-bold text-slate-200 tracking-wider font-mono uppercase truncate max-w-[170px] block">
+                    {wallet?.full_name || user.full_name || 'FZ MEMBER'}
+                  </span>
                 </div>
-              )}
 
-              <span className="text-[10px] text-slate-400 hidden lg:inline">
-                Verified Internal Financial Ledger • 100% Real-time
-              </span>
+                <div className="text-right flex items-center space-x-1.5">
+                  <div className="font-mono text-xs font-black italic tracking-tighter text-emerald-400">
+                    RuPay
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-bold">PREPAID</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Right: Lifetime Metrics */}
-          <div className="grid grid-cols-2 gap-3 shrink-0 md:min-w-[240px]">
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5">
-              <div className="text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center space-x-1">
-                <ArrowDownLeft className="w-3 h-3 text-emerald-400" />
-                <span>Total Received</span>
-              </div>
-              <div className="text-sm sm:text-base font-black text-emerald-400">
-                +₹{(wallet?.total_received || 0).toLocaleString('en-IN')}
-              </div>
-            </div>
+          {/* Quick Card Controls Drawer */}
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <button
+              onClick={handleToggleFreeze}
+              disabled={cardActionLoading || isWalletLocked}
+              className={`p-2.5 rounded-xl border flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
+                wallet?.card?.is_frozen
+                  ? 'bg-blue-500/10 border-blue-500/40 text-blue-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-bold">
+                {wallet?.card?.is_frozen ? 'Unfreeze' : 'Freeze Card'}
+              </span>
+            </button>
 
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5">
-              <div className="text-[10px] uppercase font-bold text-slate-400 mb-1 flex items-center space-x-1">
-                <ArrowUpRight className="w-3 h-3 text-slate-400" />
-                <span>Total Spent</span>
-              </div>
-              <div className="text-sm sm:text-base font-black text-slate-200">
-                -₹{(wallet?.total_spent || 0).toLocaleString('en-IN')}
-              </div>
-            </div>
+            <button
+              onClick={handleToggleOnline}
+              disabled={cardActionLoading || isWalletLocked}
+              className={`p-2.5 rounded-xl border flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer ${
+                wallet?.card?.online_transactions_enabled
+                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+              }`}
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-bold">Online Tx</span>
+            </button>
+
+            <button
+              onClick={() => setShowLimitModal(true)}
+              disabled={cardActionLoading || isWalletLocked}
+              className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 flex flex-col items-center justify-center space-y-1 transition-all cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-bold">Daily Limit</span>
+            </button>
           </div>
         </div>
 
-        {/* If Wallet is LOCKED -> Display Aadhaar & Phone KYC Form */}
-        {wallet?.status === 'LOCKED' ? (
-          <div className="mt-6 pt-5 border-t border-slate-800/80 space-y-4">
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-2">
-              <div className="flex items-center space-x-2 font-bold text-sm text-white">
-                <Lock className="w-4 h-4 text-amber-400" />
-                <span>FZ Wallet Locked — Mandatory Aadhaar & Phone KYC Required</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                When an account is created on FZ Panel, your internal FZ Wallet remains locked initially. Complete your official KYC verification using your 12-digit Aadhaar number and phone number to unlock and create your separate FZ PAY Wallet.
-              </p>
-              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-cyan-400 flex items-center space-x-2 font-medium">
-                <Shield className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span><strong>Security Notice:</strong> This FZ Wallet is an internal closed-loop digital ledger. It is <strong>NOT</strong> directly connected to your personal bank account. It maintains its own independent balance and transaction ledger.</span>
-              </div>
-            </div>
-
-            {kycError && (
-              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center space-x-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{kycError}</span>
-              </div>
-            )}
-
-            {kycSuccess && (
-              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{kycSuccess}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleKycSubmit} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <UserCheck className="w-4 h-4 text-cyan-400" />
-                <span>Identity & Contact Verification</span>
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 mb-1.5 block">Full Legal Name (as on Aadhaar)</label>
-                  <input
-                    type="text"
-                    required
-                    value={kycFullName}
-                    onChange={e => setKycFullName(e.target.value)}
-                    placeholder="e.g. Rahul Sharma"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 mb-1.5 block">12-Digit Aadhaar Number</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={14}
-                    value={kycAadhaar}
-                    onChange={e => {
-                      const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 12);
-                      setKycAadhaar(val);
-                    }}
-                    placeholder="1234 5678 9012"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none font-mono tracking-wider"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-1 block">12 numeric digits required</span>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 mb-1.5 block">10-Digit Mobile Phone Number</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={10}
-                    value={kycPhone}
-                    onChange={e => {
-                      const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
-                      setKycPhone(val);
-                    }}
-                    placeholder="9876543210"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:border-cyan-500 outline-none font-mono tracking-wider"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-1 block">Valid 10-digit Indian mobile number</span>
-                </div>
-              </div>
-
-              <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
-                <span className="text-[11px] text-slate-400">
-                  By unlocking, you agree to create a separate internal FZ PAY financial ledger account.
+        {/* RIGHT COLUMN: BALANCE, FAMPAY ACTIONS, REWARDS (7 cols) */}
+        <div className="lg:col-span-7 space-y-4">
+          {/* BALANCE & UPI HANDLE CARD */}
+          <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  Available FZ PAY Balance
                 </span>
+                <div className="flex items-baseline space-x-2 mt-1">
+                  <span className="text-3xl sm:text-4xl font-black font-mono text-white">
+                    ₹{(wallet?.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">INR</span>
+                </div>
+              </div>
+
+              {/* Personalized @fzpay Handle */}
+              <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex items-center justify-between sm:justify-start space-x-3">
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase font-mono font-bold block">
+                    Your FZ UPI Tag
+                  </span>
+                  <span className="text-xs font-mono font-bold text-cyan-400">
+                    {wallet?.upi_handle || `${user.email.split('@')[0]}@fzpay`}
+                  </span>
+                </div>
                 <button
-                  type="submit"
-                  disabled={kycLoading}
-                  className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl transition-all shadow-lg shadow-cyan-500/20 flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
+                  onClick={handleCopyTag}
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
                 >
-                  {kycLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Verifying Aadhaar & Phone KYC...</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserCheck className="w-4 h-4" />
-                      <span>Verify KYC & Unlock FZ Wallet</span>
-                    </>
-                  )}
+                  {copiedTag ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               </div>
-            </form>
-          </div>
-        ) : (
-          /* Quick Action Buttons Bar */
-          <div className="mt-6 pt-5 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-            <button
-              onClick={() => {
-                setDepositError(null);
-                setDepositSuccess(null);
-                setDepositOrder(null);
-                setShowAddMoney(true);
-              }}
-              className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs transition-all shadow-lg shadow-cyan-500/20 cursor-pointer active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Money</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setWithdrawError(null);
-                setWithdrawSuccess(null);
-                setShowWithdraw(true);
-              }}
-              className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
-            >
-              <Download className="w-4 h-4 text-amber-400" />
-              <span>Withdraw</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setSendError(null);
-                setSendSuccess(null);
-                setSendConfirming(false);
-                setShowSendMoney(true);
-              }}
-              className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
-            >
-              <Send className="w-4 h-4 text-cyan-400" />
-              <span>Send Money</span>
-            </button>
-
-            <button
-              onClick={() => setShowReceiveMoney(true)}
-              className="flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-white font-bold text-xs transition-all cursor-pointer active:scale-95"
-            >
-              <QrCode className="w-4 h-4 text-emerald-400" />
-              <span>Receive Money</span>
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-800 overflow-x-auto scrollbar-none gap-2">
-        {[
-          { id: 'transactions', label: 'Recent Transactions', badge: transactions.length },
-          { id: 'sales', label: 'Bot Sales Payments', badge: botSales.orders.length },
-          { id: 'purchases', label: 'My Purchases & Keys', badge: purchases.length },
-          { id: 'withdrawals', label: 'Withdrawal History', badge: withdrawals.length },
-          ...(isAdmin ? [{ id: 'admin', label: 'Admin Ledger Controls', badge: 'ROOT' }] : [])
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`py-3 px-3.5 text-xs font-bold whitespace-nowrap transition-all border-b-2 flex items-center space-x-2 cursor-pointer ${
-              activeTab === tab.id
-                ? 'text-cyan-400 border-cyan-400 bg-cyan-500/5'
-                : 'text-slate-400 border-transparent hover:text-white'
-            }`}
-          >
-            <span>{tab.label}</span>
-            {tab.badge !== undefined && (
-              <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                tab.badge === 'ROOT' ? 'bg-red-500/20 text-red-400 font-extrabold' : 'bg-slate-800 text-slate-300'
-              }`}>
-                {tab.badge}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* ============================================================== */}
-      {/* TAB 1: RECENT TRANSACTIONS                                     */}
-      {/* ============================================================== */}
-      {activeTab === 'transactions' && (
-        <div className="space-y-4">
-          {/* Filters Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0f172a] p-3 rounded-2xl border border-slate-800">
-            <div className="flex items-center space-x-2 text-xs text-slate-300">
-              <Filter className="w-4 h-4 text-cyan-400" />
-              <span className="font-semibold">Filter:</span>
-              <select
-                value={txTypeFilter}
-                onChange={e => setTxTypeFilter(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white outline-none cursor-pointer"
-              >
-                <option value="ALL">All Movement Types</option>
-                <option value="DEPOSIT">Deposits</option>
-                <option value="WITHDRAW">Withdrawals</option>
-                <option value="SEND">Sent Money</option>
-                <option value="RECEIVE">Received Money</option>
-                <option value="PREMIUM_PURCHASE">Premium Purchases</option>
-                <option value="BOT_PRODUCT_PURCHASE">Bot Product Sales</option>
-                <option value="REFUND">Refunds</option>
-                <option value="ADJUSTMENT">Adjustments</option>
-              </select>
-
-              <select
-                value={txStatusFilter}
-                onChange={e => setTxStatusFilter(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white outline-none cursor-pointer"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="SUCCESS">Success</option>
-                <option value="PENDING">Pending</option>
-                <option value="FAILED">Failed</option>
-              </select>
             </div>
 
-            <div className="text-xs text-slate-400 font-mono">
-              Showing {filteredTxs.length} immutable records
-            </div>
-          </div>
-
-          {/* Transactions List */}
-          {filteredTxs.length === 0 ? (
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-10 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
-                <CreditCard className="w-6 h-6" />
-              </div>
-              <h3 className="text-sm font-bold text-white">No Transactions Yet</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Your wallet transaction history will appear here once you deposit funds, send money, or sell products via your connected bots.
-              </p>
+            {/* FAMPAY 4-CORE QUICK ACTION BUTTONS */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              {/* 1. SCAN & PAY */}
               <button
-                onClick={() => setShowAddMoney(true)}
-                className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                type="button"
+                onClick={() => setShowScanPayModal(true)}
+                disabled={isWalletLocked}
+                className="p-3.5 rounded-2xl bg-gradient-to-br from-cyan-500/15 via-slate-950 to-slate-950 border border-cyan-500/30 hover:border-cyan-400 text-left transition-all group cursor-pointer disabled:opacity-50"
               >
-                + Add Money to FZ PAY
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                  <ScanLine className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div className="text-xs font-black text-white">Scan & Pay</div>
+                <div className="text-[10px] text-slate-400">Any UPI QR</div>
+              </button>
+
+              {/* 2. SEND MONEY */}
+              <button
+                type="button"
+                onClick={() => setShowSendMoney(true)}
+                disabled={isWalletLocked}
+                className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/15 via-slate-950 to-slate-950 border border-emerald-500/30 hover:border-emerald-400 text-left transition-all group cursor-pointer disabled:opacity-50"
+              >
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                  <Send className="w-4 h-4" />
+                </div>
+                <div className="text-xs font-black text-white">Pay to @tag</div>
+                <div className="text-[10px] text-slate-400">Zero fee P2P</div>
+              </button>
+
+              {/* 3. RECEIVE / QR */}
+              <button
+                type="button"
+                onClick={() => setShowReceiveMoney(true)}
+                disabled={isWalletLocked}
+                className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/15 via-slate-950 to-slate-950 border border-indigo-500/30 hover:border-indigo-400 text-left transition-all group cursor-pointer disabled:opacity-50"
+              >
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                  <QrCode className="w-4 h-4" />
+                </div>
+                <div className="text-xs font-black text-white">My QR Code</div>
+                <div className="text-[10px] text-slate-400">Receive funds</div>
+              </button>
+
+              {/* 4. ADD MONEY */}
+              <button
+                type="button"
+                onClick={() => setShowAddMoney(true)}
+                disabled={isWalletLocked}
+                className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-500/15 via-slate-950 to-slate-950 border border-amber-500/30 hover:border-amber-400 text-left transition-all group cursor-pointer disabled:opacity-50"
+              >
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <div className="text-xs font-black text-white">Add Money</div>
+                <div className="text-[10px] text-slate-400">UPI Top-up</div>
               </button>
             </div>
-          ) : (
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-800/80">
-              {filteredTxs.map(tx => {
-                const isCredit = ['DEPOSIT', 'RECEIVE', 'REFUND'].includes(tx.type) || (tx.type === 'BOT_PRODUCT_PURCHASE' && tx.balance_after > tx.balance_before) || (tx.type === 'ADJUSTMENT' && tx.balance_after > tx.balance_before);
-                return (
-                  <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-slate-900/40 transition-colors">
-                    <div className="flex items-center space-x-3 min-w-0">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                        tx.status === 'FAILED'
-                          ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                          : tx.status === 'PENDING'
-                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                          : isCredit
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
-                      }`}>
-                        {tx.type === 'DEPOSIT' && <Plus className="w-4 h-4" />}
-                        {tx.type === 'WITHDRAW' && <Download className="w-4 h-4" />}
-                        {tx.type === 'SEND' && <ArrowUpRight className="w-4 h-4" />}
-                        {tx.type === 'RECEIVE' && <ArrowDownLeft className="w-4 h-4" />}
-                        {tx.type === 'PREMIUM_PURCHASE' && <Crown className="w-4 h-4" />}
-                        {tx.type === 'BOT_PRODUCT_PURCHASE' && <ShoppingBag className="w-4 h-4" />}
-                        {tx.type === 'REFUND' && <RefreshCw className="w-4 h-4" />}
-                        {tx.type === 'ADJUSTMENT' && <Sliders className="w-4 h-4" />}
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs font-bold text-white truncate">{tx.description}</span>
-                          <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded ${
-                            tx.status === 'SUCCESS'
-                              ? 'bg-emerald-500/15 text-emerald-400'
-                              : tx.status === 'PENDING'
-                              ? 'bg-amber-500/15 text-amber-400'
-                              : 'bg-red-500/15 text-red-400'
-                          }`}>
-                            {tx.status}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-[11px] text-slate-400 mt-0.5 font-mono">
-                          <span>{new Date(tx.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                          <span>•</span>
-                          <span className="text-slate-500">{tx.id}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0 ml-3">
-                      <div className={`text-xs sm:text-sm font-black font-mono ${
-                        tx.status === 'FAILED' ? 'text-slate-500 line-through' : isCredit ? 'text-emerald-400' : 'text-slate-200'
-                      }`}>
-                        {isCredit ? '+' : '-'}₹{(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        Bal: ₹{(tx.balance_after || 0).toLocaleString('en-IN')}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* TAB 2: BOT OWNER SALES                                         */}
-      {/* ============================================================== */}
-      {activeTab === 'sales' && (
-        <div className="space-y-5">
-          {/* Sales Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Today's Sales</div>
-              <div className="text-xl font-black text-cyan-400">₹{(botSales?.todaySales || 0).toLocaleString('en-IN')}</div>
-            </div>
-
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Lifetime Revenue</div>
-              <div className="text-xl font-black text-emerald-400">₹{(botSales?.totalSales || 0).toLocaleString('en-IN')}</div>
-            </div>
-
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Delivered Orders</div>
-              <div className="text-xl font-black text-white">{botSales.successfulOrders}</div>
-            </div>
-
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Pending Orders</div>
-              <div className="text-xl font-black text-amber-400">{botSales.pendingPayments}</div>
-            </div>
           </div>
 
-          {/* Sales Orders Table */}
-          <div className="bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white">Bot Customer Sales Feed</h3>
-              <span className="text-xs text-slate-400 font-mono">{botSales.orders.length} orders total</span>
-            </div>
-
-            {botSales.orders.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400">
-                No orders processed yet through your bots. Connect a Telegram bot to start receiving automated sales!
+          {/* FAMPAY STREAKS & REWARDS STRIP */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-slate-900 to-indigo-500/10 border border-amber-500/20 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <Flame className="w-5 h-5 fill-amber-400" />
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-900/60 text-slate-400 border-b border-slate-800">
-                    <tr>
-                      <th className="p-3.5 font-bold">Order ID</th>
-                      <th className="p-3.5 font-bold">Customer</th>
-                      <th className="p-3.5 font-bold">Product / Key</th>
-                      <th className="p-3.5 font-bold">Amount</th>
-                      <th className="p-3.5 font-bold">Payment Method</th>
-                      <th className="p-3.5 font-bold">Status</th>
-                      <th className="p-3.5 font-bold">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {botSales.orders.map(order => (
-                      <tr key={order.id} className="hover:bg-slate-900/40">
-                        <td className="p-3.5 font-mono text-cyan-400 font-bold">{order.id}</td>
-                        <td className="p-3.5 font-medium text-white">{order.customer_name}</td>
-                        <td className="p-3.5 text-slate-300 font-medium">{order.product_name}</td>
-                        <td className="p-3.5 font-mono font-bold text-emerald-400">₹{order.total_amount}</td>
-                        <td className="p-3.5 text-slate-400 font-mono text-[11px]">{order.payment_provider}</td>
-                        <td className="p-3.5">
-                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-extrabold ${
-                            order.status === 'DELIVERED' || order.status === 'PAID'
-                              ? 'bg-emerald-500/15 text-emerald-400'
-                              : order.status === 'PENDING'
-                              ? 'bg-amber-500/15 text-amber-400'
-                              : 'bg-red-500/15 text-red-400'
-                          }`}>
-                            {order.status}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-slate-400 text-[11px] font-mono">
-                          {new Date(order.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* TAB 3: MY PURCHASES & KEYS                                     */}
-      {/* ============================================================== */}
-      {activeTab === 'purchases' && (
-        <div className="space-y-4">
-          <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4">
-            <h3 className="text-sm font-bold text-white mb-1">My Digital Purchases & License Keys</h3>
-            <p className="text-xs text-slate-400">
-              Keys purchased with FZ PAY are verified and delivered instantly with cryptographic validation.
-            </p>
-          </div>
-
-          {purchases.length === 0 ? (
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-10 text-center space-y-2">
-              <Key className="w-8 h-8 text-slate-500 mx-auto" />
-              <h4 className="text-sm font-bold text-white">No Purchases Yet</h4>
-              <p className="text-xs text-slate-400">When you buy digital products or license keys, they will appear here with instant key reveal.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {purchases.map(order => (
-                <div key={order.id} className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white truncate">{order.product_name}</span>
-                    <span className="text-xs font-black font-mono text-emerald-400">₹{order.total_amount}</span>
-                  </div>
-
-                  {order.key_delivered ? (
-                    <div className="bg-slate-900 border border-emerald-500/30 rounded-xl p-3 space-y-1.5">
-                      <div className="text-[10px] font-bold text-emerald-400 flex items-center justify-between">
-                        <span className="flex items-center space-x-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>🔑 Key Delivered</span>
-                        </span>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(order.key_delivered || '');
-                            alert('License key copied to clipboard!');
-                          }}
-                          className="text-[10px] text-cyan-400 hover:underline cursor-pointer flex items-center space-x-1"
-                        >
-                          <Copy className="w-3 h-3" />
-                          <span>Copy Key</span>
-                        </button>
-                      </div>
-                      <div className="font-mono text-xs text-white bg-slate-950 p-2 rounded-lg border border-slate-800 select-all font-bold">
-                        {order.key_delivered}
-                      </div>
-                    </div>
-                  ) : order.status === 'PENDING' ? (
-                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center space-x-2">
-                      <Clock className="w-4 h-4 shrink-0" />
-                      <span>⏳ Payment Verification Pending. Key will unlock automatically upon confirmation.</span>
-                    </div>
-                  ) : (
-                    <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
-                      ❌ Payment Failed / Cancelled
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1 border-t border-slate-800/80">
-                    <span>Order: {order.id}</span>
-                    <span>{new Date(order.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                  </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-white">
+                    {wallet?.rewards?.streak_days || 5} Days Payment Streak
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                    🔥 HOT
+                  </span>
                 </div>
-              ))}
+                <span className="text-[11px] text-slate-400">
+                  {wallet?.rewards?.coins || 350} FZ Coins • Earned ₹{wallet?.rewards?.total_cashback_earned || 65} Cashback
+                </span>
+              </div>
             </div>
-          )}
-        </div>
-      )}
 
-      {/* ============================================================== */}
-      {/* TAB 4: WITHDRAWAL HISTORY                                      */}
-      {/* ============================================================== */}
-      {activeTab === 'withdrawals' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between bg-[#0f172a] border border-slate-800 rounded-2xl p-4">
-            <div>
-              <h3 className="text-sm font-bold text-white">Payout Requests</h3>
-              <p className="text-xs text-slate-400">Withdraw funds to your verified UPI ID or Bank Account.</p>
-            </div>
             <button
-              onClick={() => setShowWithdraw(true)}
-              className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+              onClick={() => {
+                setScratched(false);
+                setRewardWon(null);
+                setShowRewardModal(true);
+              }}
+              disabled={isWalletLocked}
+              className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs rounded-xl transition-all shadow-md shadow-amber-500/20 flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
             >
-              + New Withdrawal
+              <Gift className="w-3.5 h-3.5" />
+              <span>Scratch Card</span>
             </button>
           </div>
-
-          {withdrawals.length === 0 ? (
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-400">
-              No withdrawal requests placed yet.
-            </div>
-          ) : (
-            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-800">
-              {withdrawals.map(w => (
-                <div key={w.id} className="p-4 flex items-center justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-bold text-white">
-                        {w.method === 'UPI' ? `UPI Payout (${w.upi_id})` : `Bank Transfer (${w.bank_name} - ${w.account_number?.slice(-4)})`}
-                      </span>
-                      <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded ${
-                        w.status === 'PAID'
-                          ? 'bg-emerald-500/15 text-emerald-400'
-                          : w.status === 'PENDING'
-                          ? 'bg-amber-500/15 text-amber-400'
-                          : 'bg-red-500/15 text-red-400'
-                      }`}>
-                        {w.status}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 font-mono">
-                      Ref: {w.id} • {new Date(w.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="text-sm font-black text-white font-mono">₹{w.amount}</div>
-                    {w.reference_id && (
-                      <div className="text-[10px] text-emerald-400 font-mono">{w.reference_id}</div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
-      )}
+      </div>
 
-      {/* ============================================================== */}
-      {/* TAB 5: ADMIN CONTROLS (PRIVILEGED)                             */}
-      {/* ============================================================== */}
-      {activeTab === 'admin' && isAdmin && (
-        <div className="space-y-5">
-          {/* Admin Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-[#0f172a] border border-red-500/30 rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">System Active Wallets</div>
-              <div className="text-2xl font-black text-white">{adminOverview?.totalWallets || 0}</div>
-            </div>
+      {/* NAVIGATION TABS: PASSBOOK / BOT SALES / ADMIN */}
+      <div className="flex items-center space-x-2 border-b border-slate-800 pb-2">
+        <button
+          onClick={() => setActiveTab('passbook')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+            activeTab === 'passbook'
+              ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          <span>Passbook Ledger</span>
+        </button>
 
-            <div className="bg-[#0f172a] border border-red-500/30 rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">Total User Wallet Balances</div>
-              <div className="text-2xl font-black text-cyan-400">₹{(adminOverview?.totalSystemBalance || 0).toLocaleString('en-IN')}</div>
-            </div>
+        <button
+          onClick={() => setActiveTab('sales')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+            activeTab === 'sales'
+              ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+          }`}
+        >
+          <ShoppingBag className="w-3.5 h-3.5" />
+          <span>Connected Bot Sales</span>
+        </button>
 
-            <div className="bg-[#0f172a] border border-red-500/30 rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">Pending Payout Obligations</div>
-              <div className="text-2xl font-black text-amber-400">₹{(adminOverview?.totalPendingPayouts || 0).toLocaleString('en-IN')}</div>
-            </div>
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('admin')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer ${
+              activeTab === 'admin'
+                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>Admin Settlement Hub</span>
+          </button>
+        )}
+
+        <div className="ml-auto">
+          <button
+            onClick={() => setShowWithdraw(true)}
+            disabled={isWalletLocked || (wallet?.balance || 0) < 100}
+            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-40"
+          >
+            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>Withdraw Payout</span>
+          </button>
+        </div>
+      </div>
+
+      {/* TAB CONTENT: PASSBOOK */}
+      {activeTab === 'passbook' && (
+        <div className="space-y-4">
+          {/* Filter Pills */}
+          <div className="flex items-center space-x-2 text-xs">
+            <span className="text-slate-500 text-[11px] font-bold uppercase">Filter:</span>
+            {['ALL', 'SEND', 'RECEIVE', 'DEPOSIT', 'STORE'].map(type => (
+              <button
+                key={type}
+                onClick={() => setTxTypeFilter(type)}
+                className={`px-3 py-1 rounded-lg transition-colors cursor-pointer text-xs font-semibold ${
+                  txTypeFilter === type
+                    ? 'bg-slate-800 text-cyan-400 border border-slate-700'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {type}
+              </button>
+            ))}
           </div>
 
-          {/* Pending Withdrawals Action Queue */}
-          <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Shield className="w-4 h-4 text-amber-400" />
-              <span>Pending User Withdrawals Queue</span>
-            </h3>
-
-            {(adminOverview?.withdrawals || []).filter(w => w.status === 'PENDING').length === 0 ? (
-              <div className="p-4 text-center text-xs text-slate-400">No pending withdrawal requests in queue.</div>
+          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+            {filteredTransactions.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 text-xs">
+                No transactions found in this category.
+              </div>
             ) : (
-              <div className="divide-y divide-slate-800">
-                {(adminOverview?.withdrawals || []).filter(w => w.status === 'PENDING').map(w => (
-                  <div key={w.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-bold text-white">
-                        {w.user_name || w.user_email} — ₹{w.amount}
+              <div className="divide-y divide-slate-800/80">
+                {filteredTransactions.map(tx => (
+                  <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-slate-800/40 transition-colors">
+                    <div className="flex items-center space-x-3.5">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                        tx.type === 'RECEIVE' || tx.type === 'DEPOSIT'
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : 'bg-rose-500/10 text-rose-400'
+                      }`}>
+                        {tx.type === 'RECEIVE' || tx.type === 'DEPOSIT' ? (
+                          <ArrowDownLeft className="w-4 h-4" />
+                        ) : (
+                          <ArrowUpRight className="w-4 h-4" />
+                        )}
                       </div>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        {w.method === 'UPI' ? `UPI: ${w.upi_id}` : `Bank: ${w.bank_name} / A/C: ${w.account_number} / IFSC: ${w.ifsc}`}
+                      <div>
+                        <div className="text-xs font-bold text-white flex items-center gap-2">
+                          <span>{tx.description}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {tx.reference_id}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          {new Date(tx.created_at).toLocaleString()} • Bal: ₹{tx.balance_after?.toFixed(2)}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => handleAdminWithdrawalAction(w.id, 'APPROVE')}
-                        className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-lg text-xs font-bold cursor-pointer"
-                      >
-                        Approve & Pay
-                      </button>
-                      <button
-                        onClick={() => handleAdminWithdrawalAction(w.id, 'REJECT')}
-                        className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg text-xs font-bold cursor-pointer"
-                      >
-                        Reject & Return
-                      </button>
+                    <div className="text-right">
+                      <span className={`text-sm font-black font-mono ${
+                        tx.type === 'RECEIVE' || tx.type === 'DEPOSIT'
+                          ? 'text-emerald-400'
+                          : 'text-white'
+                      }`}>
+                        {tx.type === 'RECEIVE' || tx.type === 'DEPOSIT' ? '+' : '-'}₹{tx.amount}
+                      </span>
+                      <span className="text-[10px] block text-emerald-400 font-bold uppercase">
+                        SUCCESS
+                      </span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+        </div>
+      )}
 
-          {/* Wallets Table */}
-          <div className="bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white">All Platform Wallets</h3>
-              <span className="text-xs text-slate-400">Audited State</span>
+      {/* TAB CONTENT: CONNECTED BOT SALES */}
+      {activeTab === 'sales' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Today's Sales</span>
+              <div className="text-xl font-black font-mono text-cyan-400 mt-1">₹{botSales.todaySales}</div>
             </div>
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Total Sales</span>
+              <div className="text-xl font-black font-mono text-emerald-400 mt-1">₹{botSales.totalSales}</div>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Delivered Orders</span>
+              <div className="text-xl font-black font-mono text-white mt-1">{botSales.successfulOrders}</div>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Pending Verify</span>
+              <div className="text-xl font-black font-mono text-amber-400 mt-1">{botSales.pendingPayments}</div>
+            </div>
+          </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-900/60 text-slate-400 border-b border-slate-800">
-                  <tr>
-                    <th className="p-3 font-bold">Wallet ID</th>
-                    <th className="p-3 font-bold">User</th>
-                    <th className="p-3 font-bold">Role</th>
-                    <th className="p-3 font-bold">Available Balance</th>
-                    <th className="p-3 font-bold">Pending</th>
-                    <th className="p-3 font-bold">Status</th>
-                    <th className="p-3 font-bold text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {(adminOverview?.wallets || []).map(w => (
-                    <tr key={w.id} className="hover:bg-slate-900/40">
-                      <td className="p-3 font-mono font-bold text-cyan-400">{w.id}</td>
-                      <td className="p-3 text-white font-medium">{w.user_name || w.user_email}</td>
-                      <td className="p-3 text-slate-400">{w.user_role}</td>
-                      <td className="p-3 font-mono font-bold text-emerald-400">₹{w.balance}</td>
-                      <td className="p-3 font-mono text-amber-400">₹{w.pending_balance || 0}</td>
-                      <td className="p-3">
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
-                          {w.status}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right">
-                        <button
-                          onClick={() => {
-                            setSelectedWalletForAdj(w.id);
-                            setShowAdjustModal(true);
-                          }}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-bold cursor-pointer"
-                        >
-                          Manual Adjustment
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-800">
+            {botSales.orders.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 text-xs">
+                No orders processed by connected bots yet.
+              </div>
+            ) : (
+              botSales.orders.map(o => (
+                <div key={o.id} className="p-4 flex items-center justify-between text-xs">
+                  <div>
+                    <div className="font-bold text-white">{o.product_name}</div>
+                    <div className="text-slate-400 text-[11px] font-mono mt-0.5">
+                      Order: {o.id} • Buyer: {o.customer_name || 'Guest'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-emerald-400 font-mono block">₹{o.total_amount}</span>
+                    <span className="text-[10px] text-cyan-400 font-mono">{o.status}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB CONTENT: ADMIN SETTLEMENT HUB */}
+      {isAdmin && activeTab === 'admin' && adminOverview && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Total Wallets Created</span>
+              <div className="text-xl font-black font-mono text-white mt-1">{adminOverview.totalWallets}</div>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">System Total Reserves</span>
+              <div className="text-xl font-black font-mono text-emerald-400 mt-1">₹{adminOverview.totalSystemBalance}</div>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Pending Withdrawal Payouts</span>
+              <div className="text-xl font-black font-mono text-amber-400 mt-1">₹{adminOverview.totalPendingPayouts}</div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* MODAL 1: ADD MONEY                                             */}
-      {/* ============================================================== */}
-      {showAddMoney && (
-        <div className="fixed inset-0 bg-[#060a12]/85 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+      {/* MODAL 1: SCAN & PAY (FAMPAY INSTANT QR / UPI SCANNER) */}
+      {showScanPayModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-[#0b0f19] border border-cyan-500/30 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-800 flex justify-between items-center">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold">
-                  ₹
-                </div>
-                <h3 className="text-sm font-bold text-white">Add Money to FZ PAY</h3>
+                <ScanLine className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-sm font-black text-white">Scan & Pay via FZ PAY</h3>
               </div>
-              <button
-                onClick={() => {
-                  setShowAddMoney(false);
-                  setDepositOrder(null);
-                }}
-                className="text-slate-400 hover:text-white cursor-pointer"
-              >
+              <button onClick={() => setShowScanPayModal(false)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
-              {depositError && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{depositError}</span>
+            <form onSubmit={handleScanPaySubmit} className="p-6 space-y-4 text-xs">
+              {scanError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300">
+                  {scanError}
+                </div>
+              )}
+              {scanSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold">
+                  {scanSuccess}
                 </div>
               )}
 
-              {depositSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>{depositSuccess}</span>
-                </div>
-              )}
-
-              {!depositOrder ? (
-                <>
-                  {/* Amount Presets */}
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">Select Preset Amount</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {[100, 500, 1000, 2500].map(amt => (
-                        <button
-                          key={amt}
-                          type="button"
-                          onClick={() => setDepositAmount(amt)}
-                          className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                            depositAmount === amt
-                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-sm'
-                              : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          ₹{amt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1">Custom Amount (INR)</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold">
-                        ₹
-                      </div>
-                      <input
-                        type="number"
-                        min="10"
-                        step="10"
-                        value={depositAmount}
-                        onChange={e => setDepositAmount(Number(e.target.value))}
-                        className="w-full pl-8 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white focus:border-cyan-500 outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Payment Method */}
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">Payment Rail</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDepositProvider('UPI')}
-                        className={`p-3 rounded-xl border text-left flex items-center space-x-2.5 transition-all cursor-pointer ${
-                          depositProvider === 'UPI'
-                            ? 'bg-cyan-500/10 border-cyan-500/50 text-white'
-                            : 'bg-slate-900 border-slate-800 text-slate-400'
-                        }`}
-                      >
-                        <Smartphone className="w-4 h-4 text-cyan-400" />
-                        <div>
-                          <div className="text-xs font-bold">Instant UPI QR</div>
-                          <div className="text-[10px] text-slate-400">GPay, PhonePe, Paytm</div>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setDepositProvider('SANDBOX')}
-                        className={`p-3 rounded-xl border text-left flex items-center space-x-2.5 transition-all cursor-pointer ${
-                          depositProvider === 'SANDBOX'
-                            ? 'bg-cyan-500/10 border-cyan-500/50 text-white'
-                            : 'bg-slate-900 border-slate-800 text-slate-400'
-                        }`}
-                      >
-                        <Shield className="w-4 h-4 text-amber-400" />
-                        <div>
-                          <div className="text-xs font-bold">Instant Test Sandbox</div>
-                          <div className="text-[10px] text-slate-400">Instant test simulator</div>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleInitiateAddMoney}
-                    disabled={depositLoading || depositAmount <= 0}
-                    className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 cursor-pointer flex items-center justify-center space-x-2"
-                  >
-                    {depositLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Continue to Payment (₹{depositAmount})</span>}
-                  </button>
-                </>
-              ) : (
-                /* Step 2: Confirmation / UPI QR */
-                <div className="space-y-4 text-center">
-                  <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400">Order Reference:</span>
-                    <div className="font-mono text-xs font-bold text-cyan-400">{depositOrder.orderId}</div>
-                    <div className="text-lg font-black text-white">Amount: ₹{depositOrder.amount}</div>
-                  </div>
-
-                  {depositOrder.qrImageUrl && (
-                    <div className="p-3 bg-white rounded-2xl w-48 h-48 mx-auto flex items-center justify-center shadow-lg">
-                      <img src={depositOrder.qrImageUrl} alt="UPI QR" className="w-full h-full object-contain" />
-                    </div>
-                  )}
-
-                  <div className="text-xs text-slate-300 font-mono bg-slate-900 p-2.5 rounded-xl border border-slate-800">
-                    Pay to: <strong className="text-white">{depositOrder.upiDetails?.upi_id || 'fzpanel@upi'}</strong>
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-slate-300 block mb-1 text-left font-semibold">12-Digit UPI Ref / UTR Number</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 428198213891 (or leave empty for test)"
-                      value={depositUtr}
-                      onChange={e => setDepositUtr(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-cyan-400 font-mono"
-                    />
-                  </div>
-
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => setDepositOrder(null)}
-                      className="flex-1 py-2 bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-semibold cursor-pointer"
-                    >
-                      Back
-                    </button>
-                    <button
-                      onClick={handleVerifyDeposit}
-                      disabled={depositVerifying}
-                      className="flex-1 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black rounded-xl text-xs transition-all shadow-lg shadow-emerald-500/20 cursor-pointer flex items-center justify-center space-x-1.5"
-                    >
-                      {depositVerifying ? <Loader2 className="w-4 h-4 animate-spin text-slate-950" /> : <span>Confirm Payment</span>}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* MODAL 2: WITHDRAW                                              */}
-      {/* ============================================================== */}
-      {showWithdraw && (
-        <div className="fixed inset-0 bg-[#060a12]/85 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
-              <div className="flex items-center space-x-2">
-                <Download className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-bold text-white">Withdraw Funds</h3>
-              </div>
-              <button onClick={() => setShowWithdraw(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleWithdrawSubmit} className="p-5 space-y-4">
-              {withdrawError && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{withdrawError}</span>
-                </div>
-              )}
-
-              {withdrawSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>{withdrawSuccess}</span>
-                </div>
-              )}
-
-              <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
-                <span className="text-slate-400">Available to Withdraw:</span>
-                <span className="font-mono font-bold text-white">₹{wallet?.balance || 0}</span>
+              {/* Simulated QR Viewfinder */}
+              <div className="relative aspect-video rounded-2xl bg-slate-950 border border-dashed border-cyan-500/40 flex flex-col items-center justify-center p-4 text-center overflow-hidden">
+                <div className="absolute inset-0 bg-cyan-500/5 animate-pulse" />
+                <QrCode className="w-12 h-12 text-cyan-400 mb-2 relative z-10" />
+                <span className="text-[11px] text-slate-300 relative z-10 font-bold">
+                  Camera / QR Scanner Active
+                </span>
+                <span className="text-[10px] text-slate-500 relative z-10">
+                  Auto-detecting NPCI UPI merchant codes
+                </span>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Withdrawal Amount (Min ₹100)</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold">
-                    ₹
-                  </div>
-                  <input
-                    type="number"
-                    min="100"
-                    max={wallet?.balance || 0}
-                    value={withdrawAmount}
-                    onChange={e => setWithdrawAmount(Number(e.target.value))}
-                    className="w-full pl-8 pr-16 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm font-bold text-white focus:border-amber-400 outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setWithdrawAmount(wallet?.balance || 0)}
-                    className="absolute inset-y-1 right-1 px-3 bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-bold rounded-lg cursor-pointer"
-                  >
-                    MAX
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Payout Method</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setWithdrawMethod('UPI')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                      withdrawMethod === 'UPI' ? 'bg-amber-500/20 border-amber-400 text-amber-300' : 'bg-slate-900 border-slate-700 text-slate-400'
-                    }`}
-                  >
-                    UPI ID
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWithdrawMethod('BANK_TRANSFER')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                      withdrawMethod === 'BANK_TRANSFER' ? 'bg-amber-500/20 border-amber-400 text-amber-300' : 'bg-slate-900 border-slate-700 text-slate-400'
-                    }`}
-                  >
-                    Bank Transfer
-                  </button>
-                </div>
-              </div>
-
-              {withdrawMethod === 'UPI' ? (
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">Your UPI ID (VPA)</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. mobile@upi or username@okhdfcbank"
-                    value={withdrawUpiId}
-                    onChange={e => setWithdrawUpiId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 outline-none font-mono"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1">Bank Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. HDFC Bank / SBI"
-                      value={withdrawBankName}
-                      onChange={e => setWithdrawBankName(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1">Account Number</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Account number"
-                      value={withdrawAccount}
-                      onChange={e => setWithdrawAccount(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 outline-none font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1">IFSC Code</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="HDFC0001234"
-                      value={withdrawIfsc}
-                      onChange={e => setWithdrawIfsc(e.target.value.toUpperCase())}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 outline-none font-mono uppercase"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={withdrawLoading || (wallet?.balance || 0) < withdrawAmount}
-                className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs rounded-xl transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 cursor-pointer flex items-center justify-center space-x-2"
-              >
-                {withdrawLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Request Payout (₹{withdrawAmount})</span>}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* MODAL 3: SEND MONEY                                            */}
-      {/* ============================================================== */}
-      {showSendMoney && (
-        <div className="fixed inset-0 bg-[#060a12]/85 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
-              <div className="flex items-center space-x-2">
-                <Send className="w-4 h-4 text-cyan-400" />
-                <h3 className="text-sm font-bold text-white">Send Money</h3>
-              </div>
-              <button onClick={() => setShowSendMoney(false)} className="text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSendMoneySubmit} className="p-5 space-y-4">
-              {sendError && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{sendError}</span>
-                </div>
-              )}
-
-              {sendSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>{sendSuccess}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Recipient FZ PAY Wallet ID</label>
+                <label className="text-[11px] text-slate-400 font-bold block mb-1">
+                  Payee UPI VPA / Merchant Name
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. FZ-WAL-XXXXXX"
-                  value={sendRecipientId}
-                  onChange={e => setSendRecipientId(e.target.value.toUpperCase())}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-cyan-400 outline-none font-mono uppercase"
+                  value={scanPayee}
+                  onChange={e => setScanPayee(e.target.value)}
+                  placeholder="e.g. coffeehouse@upi or Merchant Name"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-cyan-500"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Amount (INR)</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold">
-                    ₹
-                  </div>
-                  <input
-                    type="number"
-                    min="1"
-                    max={wallet?.balance || 0}
-                    value={sendAmount}
-                    onChange={e => setSendAmount(Number(e.target.value))}
-                    className="w-full pl-8 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-bold text-white focus:border-cyan-400 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Optional Transfer Note</label>
+                <label className="text-[11px] text-slate-400 font-bold block mb-1">Amount (₹)</label>
                 <input
-                  type="text"
-                  placeholder="e.g. Bot subscription payment / thank you"
-                  value={sendNote}
-                  onChange={e => setSendNote(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-cyan-400 outline-none"
+                  type="number"
+                  required
+                  min="1"
+                  value={scanAmount}
+                  onChange={e => setScanAmount(Number(e.target.value))}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-lg font-mono font-bold text-cyan-400 outline-none focus:border-cyan-500"
                 />
               </div>
 
-              {sendConfirming ? (
-                <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 space-y-2 text-xs">
-                  <div className="text-slate-300">Confirm sending <strong className="text-cyan-400">₹{sendAmount}</strong> to <strong className="text-white font-mono">{sendRecipientId}</strong>?</div>
-                  <div className="flex space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => setSendConfirming(false)}
-                      className="flex-1 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={sendLoading}
-                      className="flex-1 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 rounded-lg text-xs font-black cursor-pointer"
-                    >
-                      {sendLoading ? 'Processing...' : 'Yes, Send Now'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setSendConfirming(true)}
-                  disabled={!sendRecipientId.trim() || sendAmount <= 0 || (wallet?.balance || 0) < sendAmount}
-                  className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 cursor-pointer"
-                >
-                  Review Transfer (₹{sendAmount})
-                </button>
-              )}
+              <div>
+                <label className="text-[11px] text-slate-400 font-bold block mb-1">
+                  4-Digit FZ PAY Security PIN
+                </label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  required
+                  value={scanPin}
+                  onChange={e => setScanPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-center font-mono text-xl tracking-widest text-emerald-400 outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={scanLoading}
+                className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {scanLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                <span>Authorize & Pay ₹{scanAmount}</span>
+              </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* MODAL 4: RECEIVE MONEY QR                                      */}
-      {/* ============================================================== */}
-      {showReceiveMoney && (
-        <div className="fixed inset-0 bg-[#060a12]/85 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 text-center p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400">Receive FZ PAY Transfer</span>
-              <button onClick={() => setShowReceiveMoney(false)} className="text-slate-400 hover:text-white cursor-pointer">
+      {/* MODAL 2: SEND MONEY TO @TAG / P2P */}
+      {showSendMoney && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-[#0b0f19] border border-emerald-500/30 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-800 flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <Send className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-sm font-black text-white">Transfer to @tag / Friend</h3>
+              </div>
+              <button onClick={() => setShowSendMoney(false)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-3 bg-white rounded-2xl w-48 h-48 mx-auto flex items-center justify-center shadow-lg">
+            <form onSubmit={handleSendMoney} className="p-6 space-y-4 text-xs">
+              {sendError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300">
+                  {sendError}
+                </div>
+              )}
+              {sendSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold">
+                  {sendSuccess}
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] text-slate-400 font-bold block mb-1">
+                  Recipient @fzpay Tag, Phone, or Wallet ID
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={sendRecipientId}
+                  onChange={e => setSendRecipientId(e.target.value)}
+                  placeholder="e.g. rahul@fzpay, 9876543210, or FZ-WAL-..."
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] text-slate-400 font-bold block mb-1">Amount (₹)</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={sendAmount}
+                  onChange={e => setSendAmount(Number(e.target.value))}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-lg font-mono font-bold text-emerald-400 outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] text-slate-400 font-bold block mb-1">Note (Optional)</label>
+                <input
+                  type="text"
+                  value={sendNote}
+                  onChange={e => setSendNote(e.target.value)}
+                  placeholder="e.g. Dinner split, Gaming pass"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={sendLoading}
+                className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {sendLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                <span>Send ₹{sendAmount} (0% Fees)</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: RECEIVE / PERSONAL QR CODE */}
+      {showReceiveMoney && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-[#0b0f19] border border-indigo-500/30 rounded-3xl w-full max-w-sm shadow-2xl p-6 text-center space-y-4">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-black text-indigo-400 uppercase tracking-wider font-mono">
+                MY FZ PAY QR CODE
+              </span>
+              <button onClick={() => setShowReceiveMoney(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-white rounded-2xl shadow-xl mx-auto w-fit">
               <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`fzpay://${wallet?.id}`)}`}
-                alt="FZ PAY QR"
-                className="w-full h-full object-contain"
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=${encodeURIComponent(wallet?.upi_handle || 'user@fzpay')}&pn=${encodeURIComponent(wallet?.full_name || 'FZ User')}`}
+                alt="Personal UPI QR"
+                className="w-52 h-52 object-contain"
               />
             </div>
 
             <div className="space-y-1">
-              <span className="text-xs text-slate-400">Your Unique FZ PAY Wallet ID:</span>
-              <div className="font-mono text-base font-black text-cyan-400 bg-slate-900 py-2 rounded-xl border border-slate-800">
-                {wallet?.id}
-              </div>
+              <span className="text-sm font-black text-white">{wallet?.full_name || user.full_name}</span>
+              <div className="text-xs font-mono font-bold text-cyan-400">{wallet?.upi_handle}</div>
             </div>
 
-            <button
-              onClick={handleCopyWalletId}
-              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 cursor-pointer"
-            >
-              {copiedId ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedId ? 'Copied Wallet ID!' : 'Copy Wallet ID'}</span>
-            </button>
+            <p className="text-[10px] text-slate-400">
+              Scan with any UPI app (GPay, PhonePe, Paytm) to deposit directly into your FZ PAY internal wallet.
+            </p>
           </div>
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* MODAL 5: ADMIN MANUAL ADJUSTMENT                               */}
-      {/* ============================================================== */}
-      {showAdjustModal && isAdmin && (
-        <div className="fixed inset-0 bg-[#060a12]/85 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-[#0f172a] border border-red-500/40 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-red-500/10">
+      {/* MODAL 4: ADD MONEY TO WALLET */}
+      {showAddMoney && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-[#0b0f19] border border-amber-500/30 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-800 flex justify-between items-center">
               <div className="flex items-center space-x-2">
-                <Sliders className="w-4 h-4 text-red-400" />
-                <h3 className="text-sm font-bold text-white">Admin Manual Ledger Adjustment</h3>
+                <Plus className="w-5 h-5 text-amber-400" />
+                <h3 className="text-sm font-black text-white">Add Money to FZ PAY</h3>
               </div>
-              <button onClick={() => setShowAdjustModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setShowAddMoney(false)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAdminAdjustSubmit} className="p-5 space-y-4">
-              {adjError && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                  {adjError}
+            <div className="p-6 space-y-4 text-xs">
+              {depositError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300">
+                  {depositError}
+                </div>
+              )}
+              {depositSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold">
+                  {depositSuccess}
                 </div>
               )}
 
-              {adjSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs">
-                  {adjSuccess}
-                </div>
-              )}
+              {!depositOrder ? (
+                <form onSubmit={handleInitiateDeposit} className="space-y-4">
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-bold block mb-1">
+                      Top-up Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="10"
+                      value={depositAmount}
+                      onChange={e => setDepositAmount(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-lg font-mono font-bold text-amber-400 outline-none focus:border-amber-500"
+                    />
+                  </div>
 
-              <div>
-                <label className="text-xs text-slate-300 block mb-1">Target Wallet ID</label>
-                <input
-                  type="text"
-                  required
-                  value={selectedWalletForAdj}
-                  onChange={e => setSelectedWalletForAdj(e.target.value.toUpperCase())}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
-                />
-              </div>
+                  <div className="flex gap-2">
+                    {[100, 500, 1000, 2000].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setDepositAmount(val)}
+                        className="flex-1 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-bold text-slate-300 hover:border-amber-500/50"
+                      >
+                        +₹{val}
+                      </button>
+                    ))}
+                  </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs text-slate-300 block mb-1">Adjustment Type</label>
-                  <select
-                    value={adjType}
-                    onChange={e => setAdjType(e.target.value as any)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none cursor-pointer"
+                  <button
+                    type="submit"
+                    disabled={depositLoading}
+                    className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <option value="CREDIT">CREDIT (+)</option>
-                    <option value="DEBIT">DEBIT (-)</option>
-                  </select>
-                </div>
+                    {depositLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+                    <span>Generate Official FZ PAY QR</span>
+                  </button>
+                </form>
+              ) : (
+                <div className="space-y-4 text-center">
+                  <div className="p-3 bg-white rounded-2xl shadow-xl mx-auto w-fit">
+                    <img
+                      src={depositOrder.qrImageUrl}
+                      alt="Deposit QR"
+                      className="w-48 h-48 object-contain"
+                    />
+                  </div>
 
-                <div>
-                  <label className="text-xs text-slate-300 block mb-1">Amount (₹)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={adjAmount}
-                    onChange={e => setAdjAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold"
-                  />
+                  <div className="space-y-1">
+                    <span className="text-xs font-mono font-bold text-white">Amount: ₹{depositOrder.amount}</span>
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      Pay to: {depositOrder.upiDetails?.upi_id || 'fzpanel@upi'}
+                    </div>
+                  </div>
+
+                  <div className="text-left space-y-1">
+                    <label className="text-[10px] text-slate-400 font-bold">12-Digit UPI UTR (Optional)</label>
+                    <input
+                      type="text"
+                      value={depositUtr}
+                      onChange={e => setDepositUtr(e.target.value)}
+                      placeholder="e.g. 308412984102"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-cyan-400 outline-none"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleVerifyDeposit}
+                    disabled={depositVerifying}
+                    className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-black rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {depositVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    <span>[ PAYMENT VERIFY ]</span>
+                  </button>
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: FAMPAY MYSTERY SCRATCH CARD */}
+      {showRewardModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-[#0b0f19] border border-amber-500/40 rounded-3xl w-full max-w-sm shadow-2xl p-6 text-center space-y-4">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-black text-amber-400 uppercase tracking-widest font-mono">
+                🎁 FAMPAY MYSTERY REWARD
+              </span>
+              <button onClick={() => setShowRewardModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {scratched && rewardWon ? (
+              <div className="p-6 rounded-2xl bg-gradient-to-b from-amber-500/20 to-transparent border border-amber-500/40 space-y-3 animate-in zoom-in-95">
+                <div className="text-3xl">🎉</div>
+                <h3 className="text-lg font-black text-white">CONGRATULATIONS!</h3>
+                <div className="text-2xl font-black font-mono text-emerald-400">
+                  +₹{rewardWon.cashback} CASHBACK
+                </div>
+                <div className="text-xs font-bold text-amber-300">
+                  +{rewardWon.coinsWon} FZ Coins
+                </div>
+                <p className="text-[11px] text-slate-300">{rewardWon.message}</p>
+                <button
+                  onClick={() => setShowRewardModal(false)}
+                  className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition-all"
+                >
+                  Awesome!
+                </button>
               </div>
+            ) : (
+              <div className="space-y-4">
+                <div
+                  onClick={handleScratchReward}
+                  className="aspect-square rounded-2xl bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-600 flex flex-col items-center justify-center p-6 text-slate-950 cursor-pointer shadow-xl hover:scale-102 transition-transform select-none"
+                >
+                  {rewardLoading ? (
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                  ) : (
+                    <>
+                      <Sparkles className="w-10 h-10 mb-2" />
+                      <span className="font-black text-sm uppercase">Tap to Scratch</span>
+                      <span className="text-[10px] font-bold mt-1">Win up to ₹25 Instant Cashback</span>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Daily rewards available for active FZ PAY members. Refreshes every 24 hours!
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
+      {/* MODAL 6: SET CARD DAILY LIMIT */}
+      {showLimitModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-[#0b0f19] border border-cyan-500/30 rounded-3xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-black text-white">Set Daily Card Limit</span>
+              <button onClick={() => setShowLimitModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveLimit} className="space-y-4 text-xs">
               <div>
-                <label className="text-xs text-slate-300 block mb-1">Mandatory Audit Reason</label>
-                <textarea
-                  required
-                  rows={2}
-                  placeholder="e.g. Correction for transaction discrepancy / refund settlement"
-                  value={adjReason}
-                  onChange={e => setAdjReason(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none"
+                <label className="text-[11px] text-slate-400 block mb-1">
+                  Daily Spending Ceiling (₹)
+                </label>
+                <input
+                  type="number"
+                  min="100"
+                  max="100000"
+                  value={newLimit}
+                  onChange={e => setNewLimit(Number(e.target.value))}
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-lg font-mono font-bold text-cyan-400 outline-none"
                 />
               </div>
 
               <button
                 type="submit"
-                disabled={adjLoading}
-                className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white font-black text-xs rounded-xl cursor-pointer"
+                disabled={cardActionLoading}
+                className="w-full py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-xl text-xs transition-all"
               >
-                {adjLoading ? 'Recording Adjustment...' : 'Record Audited Adjustment'}
+                Save Daily Limit
               </button>
             </form>
           </div>
         </div>
       )}
+
+      {/* MODAL 7: WITHDRAWAL FORM */}
+      {showWithdraw && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-[#0b0f19] border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-sm font-black text-white">Withdraw Funds</h3>
+              <button onClick={() => setShowWithdraw(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleWithdraw} className="p-6 space-y-4 text-xs">
+              {withdrawError && <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300">{withdrawError}</div>}
+              {withdrawSuccess && <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold">{withdrawSuccess}</div>}
+
+              <div>
+                <label className="text-[11px] text-slate-400 font-bold block mb-1">Amount to Withdraw (₹)</label>
+                <input
+                  type="number"
+                  min="100"
+                  required
+                  value={withdrawAmount}
+                  onChange={e => setWithdrawAmount(Number(e.target.value))}
+                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] text-slate-400 font-bold block mb-1">Destination UPI ID</label>
+                <input
+                  type="text"
+                  required
+                  value={withdrawUpiId}
+                  onChange={e => setWithdrawUpiId(e.target.value)}
+                  placeholder="yourname@okhdfcbank"
+                  className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={withdrawLoading}
+                className="w-full py-2.5 bg-slate-200 hover:bg-white text-slate-950 font-black rounded-xl transition-all"
+              >
+                {withdrawLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Confirm Withdrawal'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REUSABLE KYC ONBOARDING MODAL */}
+      <FzPayKycModal
+        isOpen={showKycModal}
+        onClose={() => setShowKycModal(false)}
+        onSuccess={(unlockedWallet) => {
+          setWallet(unlockedWallet);
+          loadWalletData();
+        }}
+        userFullName={user.full_name}
+        userPhone={user.phone}
+      />
     </div>
   );
 };

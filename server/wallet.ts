@@ -73,6 +73,8 @@ export class WalletService {
       }
     }
 
+    this.ensureCardAndRewards(wallet, user);
+
     return wallet;
   }
 
@@ -766,17 +768,37 @@ export class WalletService {
       throw new Error('Please enter a valid transfer amount.');
     }
 
-    const cleanWalletId = recipientWalletId.trim().toUpperCase();
+    const rawInput = recipientWalletId.trim();
+    const cleanUpper = rawInput.toUpperCase();
+    const cleanHandle = rawInput.toLowerCase().replace(/^@/, '');
+    const cleanPhone = rawInput.replace(/[\s-+]/g, '').slice(-10);
+
     const senderWallet = this.getOrCreateWallet(senderUserId);
     const senderUser = db.users.find(u => u.id === senderUserId)!;
 
-    if (senderWallet.id === cleanWalletId) {
+    if (senderWallet.id === cleanUpper || (senderWallet.upi_handle && senderWallet.upi_handle.toLowerCase() === cleanHandle)) {
       throw new Error('You cannot transfer money to your own wallet.');
     }
 
-    const recipientWallet = (db.wallets || []).find(w => w.id === cleanWalletId);
+    let recipientWallet = (db.wallets || []).find(w => 
+      w.id.toUpperCase() === cleanUpper ||
+      (w.upi_handle && (w.upi_handle.toLowerCase() === cleanHandle || w.upi_handle.toLowerCase() === `${cleanHandle}@fzpay`)) ||
+      (w.phone && w.phone.slice(-10) === cleanPhone)
+    );
+
     if (!recipientWallet) {
-      throw new Error(`Recipient wallet "${cleanWalletId}" does not exist.`);
+      const matchedUser = db.users.find(u => 
+        u.email.toLowerCase() === rawInput.toLowerCase() ||
+        (u.username && u.username.toLowerCase() === cleanHandle) ||
+        (u.phone && u.phone.slice(-10) === cleanPhone)
+      );
+      if (matchedUser) {
+        recipientWallet = this.getOrCreateWallet(matchedUser.id);
+      }
+    }
+
+    if (!recipientWallet) {
+      throw new Error(`Recipient "${rawInput}" does not exist. Please check the FZ PAY @tag, phone number, or wallet ID.`);
     }
 
     if (recipientWallet.status !== 'ACTIVE') {
@@ -1209,6 +1231,237 @@ export class WalletService {
       pendingPayments,
       totalAmountReceived: totalSales,
       orders: orders.slice(0, 50)
+    };
+  }
+
+  /**
+   * Generates deterministic FamPay-style virtual card & reward state
+   */
+  public static ensureCardAndRewards(wallet: Wallet, user: User) {
+    const cleanHandle = (user.username || user.email.split('@')[0] || 'user').toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!wallet.upi_handle) {
+      wallet.upi_handle = `${cleanHandle}@fzpay`;
+    }
+
+    if (!wallet.card) {
+      const digits = (wallet.id + user.id).replace(/[^0-9]/g, '').padEnd(12, '8').slice(-12);
+      const rawCard = `5399${digits}`;
+      const formatted = `${rawCard.slice(0, 4)} ${rawCard.slice(4, 8)} ${rawCard.slice(8, 12)} ${rawCard.slice(12, 16)}`;
+      const masked = `${rawCard.slice(0, 4)} •••• •••• ${rawCard.slice(12, 16)}`;
+      const cvv = `${Math.abs(digits.split('').reduce((acc, d) => acc * 31 + parseInt(d, 10), 7)) % 900 + 100}`;
+      
+      wallet.card = {
+        card_number: formatted,
+        card_number_masked: masked,
+        cvv,
+        expiry: '09/31',
+        cardholder_name: (wallet.full_name || user.full_name || user.email.split('@')[0]).toUpperCase(),
+        network: 'RuPay',
+        is_frozen: false,
+        online_transactions_enabled: true,
+        daily_limit: 25000
+      };
+    } else if (wallet.full_name && wallet.card.cardholder_name !== wallet.full_name.toUpperCase()) {
+      wallet.card.cardholder_name = wallet.full_name.toUpperCase();
+    }
+
+    if (!wallet.rewards) {
+      wallet.rewards = {
+        coins: 350,
+        streak_days: 5,
+        total_cashback_earned: 65,
+        last_scratched_date: ''
+      };
+    }
+  }
+
+  /**
+   * Toggle Freeze / Unfreeze for FamPay Virtual Card
+   */
+  public static toggleCardFreeze(userId: string) {
+    const wallet = this.getOrCreateWallet(userId);
+    if (!wallet.card) throw new Error('Card not found.');
+    wallet.card.is_frozen = !wallet.card.is_frozen;
+    wallet.updated_at = new Date().toISOString();
+    db.saveImmediately();
+    return {
+      success: true,
+      isFrozen: wallet.card.is_frozen,
+      message: wallet.card.is_frozen ? '❄️ FZ Card is now frozen. All transactions are temporarily blocked.' : '🟢 FZ Card is active and ready for transactions.',
+      wallet
+    };
+  }
+
+  /**
+   * Toggle Online Transactions for FamPay Virtual Card
+   */
+  public static toggleOnlineTx(userId: string) {
+    const wallet = this.getOrCreateWallet(userId);
+    if (!wallet.card) throw new Error('Card not found.');
+    wallet.card.online_transactions_enabled = !wallet.card.online_transactions_enabled;
+    wallet.updated_at = new Date().toISOString();
+    db.saveImmediately();
+    return {
+      success: true,
+      onlineEnabled: wallet.card.online_transactions_enabled,
+      message: wallet.card.online_transactions_enabled ? '🌐 Online payments enabled.' : '🔒 Online payments disabled.',
+      wallet
+    };
+  }
+
+  /**
+   * Set Daily Spending Limit for FamPay Virtual Card
+   */
+  public static setCardDailyLimit(userId: string, limit: number) {
+    if (!limit || limit < 100 || limit > 100000) {
+      throw new Error('Please enter a daily limit between ₹100 and ₹1,00,000.');
+    }
+    const wallet = this.getOrCreateWallet(userId);
+    if (!wallet.card) throw new Error('Card not found.');
+    wallet.card.daily_limit = limit;
+    wallet.updated_at = new Date().toISOString();
+    db.saveImmediately();
+    return {
+      success: true,
+      dailyLimit: limit,
+      message: `Daily card limit set to ₹${limit.toLocaleString()}.`,
+      wallet
+    };
+  }
+
+  /**
+   * Scratch Card / Daily Reward Claim (Like FamPay Rewards!)
+   */
+  public static scratchDailyReward(userId: string) {
+    const wallet = this.getOrCreateWallet(userId);
+    if (wallet.status !== 'ACTIVE') {
+      throw new Error('Please complete KYC to unlock your FZ PAY rewards.');
+    }
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    
+    if (!wallet.rewards) {
+      wallet.rewards = { coins: 100, streak_days: 1, total_cashback_earned: 0 };
+    }
+
+    if (wallet.rewards.last_scratched_date === todayStr) {
+      throw new Error('You have already claimed today\'s FamPay reward! Come back tomorrow.');
+    }
+
+    const cashback = Math.floor(Math.random() * 21) + 5; // ₹5 - ₹25
+    const coinsWon = Math.floor(Math.random() * 101) + 50; // 50 - 150 coins
+
+    wallet.balance += cashback;
+    wallet.rewards.coins += coinsWon;
+    wallet.rewards.streak_days = (wallet.rewards.streak_days || 0) + 1;
+    wallet.rewards.total_cashback_earned = (wallet.rewards.total_cashback_earned || 0) + cashback;
+    wallet.rewards.last_scratched_date = todayStr;
+    wallet.updated_at = now.toISOString();
+
+    const user = db.users.find(u => u.id === userId);
+    if (user) {
+      user.wallet_balance = wallet.balance;
+    }
+
+    const txId = `WTX-RWD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    if (!db.wallet_transactions) db.wallet_transactions = [];
+    db.wallet_transactions.unshift({
+      id: txId,
+      wallet_id: wallet.id,
+      user_id: userId,
+      type: 'RECEIVE',
+      amount: cashback,
+      currency: 'INR',
+      balance_before: wallet.balance - cashback,
+      balance_after: wallet.balance,
+      reference_id: `REWARD-${todayStr}`,
+      description: `🎁 FamPay Mystery Scratch Card Cashback (${coinsWon} FZ Coins + ₹${cashback})`,
+      status: 'SUCCESS',
+      created_at: now.toISOString(),
+      completed_at: now.toISOString()
+    });
+
+    db.saveImmediately();
+
+    return {
+      success: true,
+      cashback,
+      coinsWon,
+      streak: wallet.rewards.streak_days,
+      message: `🎉 You won ₹${cashback} instant cashback and ${coinsWon} FZ Coins!`,
+      wallet
+    };
+  }
+
+  /**
+   * Scan & Pay UPI QR simulation from FZ PAY internal wallet
+   */
+  public static scanAndPay(params: {
+    userId: string;
+    upiUri: string;
+    amount: number;
+    payeeName?: string;
+    note?: string;
+  }) {
+    const { userId, upiUri, amount, payeeName, note } = params;
+    if (!amount || amount <= 0) {
+      throw new Error('Please enter a valid payment amount.');
+    }
+
+    const wallet = this.getOrCreateWallet(userId);
+    if (wallet.status !== 'ACTIVE') {
+      throw new Error('Your FZ PAY wallet is locked. Complete Aadhaar KYC first.');
+    }
+
+    if (wallet.card?.is_frozen) {
+      throw new Error('Your FZ PAY account is currently frozen. Unfreeze to pay.');
+    }
+
+    if (wallet.balance < amount) {
+      throw new Error(`Insufficient FZ PAY balance. Available: ₹${wallet.balance}, Required: ₹${amount}.`);
+    }
+
+    const now = new Date().toISOString();
+    const balanceBefore = wallet.balance;
+    const balanceAfter = balanceBefore - amount;
+    wallet.balance = balanceAfter;
+    wallet.total_spent = (wallet.total_spent || 0) + amount;
+    wallet.updated_at = now;
+
+    const user = db.users.find(u => u.id === userId);
+    if (user) {
+      user.wallet_balance = wallet.balance;
+      user.total_spent = (user.total_spent || 0) + amount;
+    }
+
+    const recipient = payeeName || 'Merchant QR';
+    const txId = `WTX-SCAN-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    
+    if (!db.wallet_transactions) db.wallet_transactions = [];
+    db.wallet_transactions.unshift({
+      id: txId,
+      wallet_id: wallet.id,
+      user_id: userId,
+      type: 'SEND',
+      amount,
+      currency: 'INR',
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      reference_id: txId,
+      description: `⚡ Scan & Pay to ${recipient}${note ? ` (${note})` : ''}`,
+      status: 'SUCCESS',
+      metadata: { upi_uri: upiUri, payee: recipient, note },
+      created_at: now,
+      completed_at: now
+    });
+
+    db.saveImmediately();
+
+    return {
+      success: true,
+      message: `✅ Paid ₹${amount} successfully to ${recipient} via FZ PAY!`,
+      txId,
+      wallet
     };
   }
 

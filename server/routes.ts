@@ -1855,6 +1855,64 @@ apiRouter.post('/wallet/send', authenticate, rateLimit({ max: 15, windowMs: 6000
   }
 });
 
+// Toggle FamPay Virtual Card Freeze
+apiRouter.post('/wallet/card/toggle-freeze', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = WalletService.toggleCardFreeze(req.user!.id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Toggle FamPay Virtual Card Online Payments
+apiRouter.post('/wallet/card/toggle-online', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = WalletService.toggleOnlineTx(req.user!.id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Set FamPay Virtual Card Daily Spending Limit
+apiRouter.post('/wallet/card/set-limit', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { limit } = req.body;
+    const result = WalletService.setCardDailyLimit(req.user!.id, Number(limit));
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Claim FamPay Scratch Card / Daily Reward
+apiRouter.post('/wallet/rewards/scratch', authenticate, rateLimit({ max: 10, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = WalletService.scratchDailyReward(req.user!.id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Scan & Pay from FZ PAY Internal Wallet
+apiRouter.post('/wallet/scan-pay', authenticate, rateLimit({ max: 20, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { upiUri, amount, payeeName, note } = req.body;
+    const result = WalletService.scanAndPay({
+      userId: req.user!.id,
+      upiUri: upiUri || 'upi://pay',
+      amount: Number(amount),
+      payeeName,
+      note
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // Request withdrawal from FZ PAY wallet
 apiRouter.post('/wallet/withdraw', authenticate, rateLimit({ max: 10, windowMs: 60000 }), async (req: AuthenticatedRequest, res: Response) => {
   try {

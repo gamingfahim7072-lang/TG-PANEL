@@ -217,6 +217,24 @@ export interface Wallet {
   aadhaar_masked?: string;
   phone?: string;
   full_name?: string;
+  upi_handle?: string; // e.g. "user@fzpay"
+  card?: {
+    card_number: string;
+    card_number_masked: string;
+    cvv: string;
+    expiry: string;
+    cardholder_name: string;
+    network: 'RuPay' | 'FZ_PAY';
+    is_frozen: boolean;
+    online_transactions_enabled: boolean;
+    daily_limit: number;
+  };
+  rewards?: {
+    coins: number;
+    streak_days: number;
+    total_cashback_earned: number;
+    last_scratched_date?: string;
+  };
   total_received: number;
   total_spent: number;
   created_at: string;
