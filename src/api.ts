@@ -543,6 +543,87 @@ class ApiClient {
     return this.request<{ success: boolean; payments: any[] }>(`/subscription/payments-history`);
   }
 
+  // Owner Payment Provider Configuration
+  public async getOwnerPaymentConfig() {
+    return this.request<{
+      success: boolean;
+      config: {
+        provider: string;
+        provider_name: string;
+        merchant_account: string;
+        vpa_upi: string;
+        raw_vpa: string;
+        status: 'NOT_CONFIGURED' | 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'FAILED';
+        display_name: string;
+        all_providers: Array<{
+          id: string;
+          provider: string;
+          name: string;
+          display_name: string;
+          is_enabled: boolean;
+          environment: string;
+          has_key: boolean;
+          has_secret: boolean;
+          merchant_id_masked: string;
+        }>;
+        upi_configs: Array<{
+          id: string;
+          upi_id: string;
+          account_holder: string;
+          bank_name: string;
+          is_active: boolean;
+          is_default: boolean;
+        }>;
+      };
+    }>(`/owner/payment-provider`);
+  }
+
+  public async updateOwnerPaymentConfig(payload: {
+    provider: string;
+    merchantId?: string;
+    merchantVpa?: string;
+    apiKey?: string;
+    apiSecret?: string;
+    webhookSecret?: string;
+    environment?: 'TEST' | 'LIVE';
+  }) {
+    return this.request<{ success: boolean; config: any; message: string }>(`/owner/payment-provider`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  public async testOwnerPaymentConnection(provider?: string) {
+    return this.request<{
+      success: boolean;
+      result: {
+        success: boolean;
+        status: 'ACTIVE' | 'PENDING' | 'FAILED' | 'NOT_CONFIGURED';
+        message: string;
+        details?: any;
+      };
+    }>(`/owner/payment-provider/test`, {
+      method: 'POST',
+      body: JSON.stringify({ provider })
+    });
+  }
+
+  public async getPaymentDestination() {
+    return this.request<{
+      success: boolean;
+      destination: {
+        displayName: string;
+        displayUpiId: string;
+        providerIssuedVpa: string;
+        merchantVpa: string;
+        destinationVpa: string;
+        providerAccountId: string;
+        providerMerchantId: string;
+        providerStatus: string;
+      };
+    }>(`/payment/destination`);
+  }
+
   // Bots
   public async getBots() {
     return this.request<{ success: boolean; bots: TelegramBot[] }>(`/bots`);

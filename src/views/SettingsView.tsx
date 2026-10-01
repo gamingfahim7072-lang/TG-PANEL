@@ -8,10 +8,14 @@ import {
   AlertCircle,
   Copy,
   ExternalLink,
-  Code
+  Code,
+  ShieldCheck,
+  Building,
+  Zap
 } from 'lucide-react';
 import { User } from '../types';
 import { api } from '../api';
+import { OwnerPaymentConfigModal } from '../components/OwnerPaymentConfigModal';
 
 interface SettingsViewProps {
   user: User;
@@ -34,6 +38,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user }) => {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null);
+  const [showOwnerPaymentModal, setShowOwnerPaymentModal] = useState(false);
 
   const handleUpdateAdminCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -345,6 +350,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user }) => {
         </div>
       </div>
 
+      {/* Owner Payment Provider Configuration (Restricted) */}
+      {isAdminOrOwner && (
+        <div className="bg-gradient-to-br from-[#131b2e] to-[#0c101c] border border-cyan-500/30 rounded-2xl p-6 space-y-4 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                    OWNER / ADMIN ONLY
+                  </span>
+                </div>
+                <h2 className="text-base font-bold text-white">FZ PAY Payment Provider & UPI Verification</h2>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowOwnerPaymentModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>CONFIGURE & TEST CONNECTION</span>
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Manage provider-approved merchant accounts, verified UPI VPAs, and real-time connectivity testing. Customer payments and QR codes route to your verified settlement destination.
+          </p>
+        </div>
+      )}
+
       {/* Developer Webhooks Documentation & Guide */}
       <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6 space-y-3">
         <div className="flex items-center space-x-2.5">
@@ -367,6 +405,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user }) => {
           </div>
         </div>
       </div>
+
+      {/* Owner Payment Provider Modal */}
+      <OwnerPaymentConfigModal
+        isOpen={showOwnerPaymentModal}
+        onClose={() => setShowOwnerPaymentModal(false)}
+        userRole={user.role}
+      />
     </div>
   );
 };

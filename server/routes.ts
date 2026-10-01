@@ -54,6 +54,7 @@ import { PaymentService } from './payment.js';
 import { RealPaymentEngine } from './realPaymentEngine.js';
 import { WalletService } from './wallet.js';
 import { CronService } from './cron.js';
+import { PaymentProviderRegistry } from './paymentProvider.js';
 
 export const apiRouter = Router();
 
@@ -5766,6 +5767,77 @@ apiRouter.put('/admin/settings', authenticate, requireRole('ADMIN', 'SUPER ADMIN
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// ==========================================
+// 9B. OWNER PAYMENT PROVIDER CONFIGURATION
+// ==========================================
+
+apiRouter.get('/owner/payment-provider', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const isAuthorized = user.role === 'OWNER' || user.role === 'SUPER ADMIN' || user.role === 'ADMIN';
+  if (!isAuthorized) {
+    return res.status(403).json({ success: false, error: 'Unauthorized: Owner access required.' });
+  }
+  const config = PaymentProviderRegistry.getOwnerPaymentConfig();
+  return res.json({ success: true, config });
+});
+
+apiRouter.post('/owner/payment-provider', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAuthorized = user.role === 'OWNER' || user.role === 'SUPER ADMIN';
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Only Owner or Super Admin can modify payment gateway secrets and destinations.' });
+    }
+
+    const updatedConfig = PaymentProviderRegistry.updateOwnerPaymentConfig(req.body);
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'OWNER_PAYMENT_CONFIG_UPDATED',
+      resourceType: 'PAYMENT_PROVIDER',
+      resourceId: req.body.provider || 'UPI',
+      metadata: { provider: req.body.provider, environment: req.body.environment },
+      req
+    });
+
+    return res.json({ success: true, config: updatedConfig, message: 'Owner payment provider settings updated successfully.' });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+apiRouter.post('/owner/payment-provider/test', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAuthorized = user.role === 'OWNER' || user.role === 'SUPER ADMIN' || user.role === 'ADMIN';
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Unauthorized.' });
+    }
+
+    const provider = PaymentProviderRegistry.getProvider(req.body.provider);
+    const testResult = await provider.testConnection();
+
+    logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'PAYMENT_PROVIDER_TEST_CONNECTION',
+      resourceType: 'PAYMENT_PROVIDER',
+      resourceId: provider.name,
+      metadata: { status: testResult.status, success: testResult.success },
+      req
+    });
+
+    return res.json({ success: true, result: testResult });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+apiRouter.get('/payment/destination', async (_req: Request, res: Response) => {
+  const dest = PaymentProviderRegistry.getPaymentDestination();
+  return res.json({ success: true, destination: dest });
 });
 
 // Notifications

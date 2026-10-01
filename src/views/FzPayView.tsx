@@ -54,6 +54,7 @@ import { WalletCinematicIntroModal } from '../components/WalletCinematicIntroMod
 import { WalletProfileModal } from '../components/WalletProfileModal';
 import { WalletSettingsModal } from '../components/WalletSettingsModal';
 import { FzPayQrCode } from '../components/FzPayQrCode';
+import { OwnerPaymentConfigModal } from '../components/OwnerPaymentConfigModal';
 import { PageTransition } from '../components/PageTransition';
 
 interface FzPayViewProps {
@@ -135,6 +136,17 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
   const [showKycModal, setShowKycModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showOwnerPaymentModal, setShowOwnerPaymentModal] = useState(false);
+  const [paymentDestination, setPaymentDestination] = useState<{
+    displayName: string;
+    displayUpiId: string;
+    providerIssuedVpa: string;
+    merchantVpa: string;
+    destinationVpa: string;
+    providerAccountId: string;
+    providerMerchantId: string;
+    providerStatus: string;
+  } | null>(null);
   const [showCinematicIntro, setShowCinematicIntro] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
 
@@ -214,6 +226,12 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
       if (isAdmin) {
         loadAdminData();
       }
+      try {
+        const destRes = await api.getPaymentDestination();
+        if (destRes?.success && destRes.destination) {
+          setPaymentDestination(destRes.destination);
+        }
+      } catch {}
     } catch (err) {
       console.error('Failed to load wallet dashboard', err);
       setWallet(null);
@@ -669,14 +687,23 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
                 </span>
               </div>
               <div className="flex items-center space-x-2">
-                <span className="text-[10px] text-slate-500 uppercase font-bold">FZ PAY UPI ID:</span>
-                <span className="font-bold text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500 uppercase font-bold">FZ PAY VIRTUAL TAG:</span>
+                <span className="font-bold text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1.5" title="Internal Wallet Transfer Identifier">
                   <span>{wallet.upi_handle}</span>
-                  <button onClick={handleCopyTag} className="text-slate-400 hover:text-white cursor-pointer">
+                  <button onClick={handleCopyTag} className="text-slate-400 hover:text-white cursor-pointer" title="Copy Virtual Tag">
                     {copiedTag ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                   </button>
                 </span>
               </div>
+              {paymentDestination?.destinationVpa && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold">UPI GATEWAY VPA:</span>
+                  <span className="font-bold text-emerald-400 bg-slate-950 px-2 py-0.5 rounded border border-emerald-900/40 flex items-center gap-1.5" title="Verified Banking Payment Destination">
+                    <span>{paymentDestination.destinationVpa}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  </span>
+                </div>
+              )}
               <div className="flex items-center space-x-2">
                 <span className="text-[10px] text-slate-500 uppercase font-bold">KYC:</span>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
@@ -691,7 +718,16 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
               </div>
             </div>
 
-            <div className="flex items-center space-x-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {(user?.role === 'OWNER' || user?.role === 'SUPER ADMIN' || user?.role === 'ADMIN') && (
+                <button
+                  onClick={() => setShowOwnerPaymentModal(true)}
+                  className="px-3 py-1.5 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer shadow-sm"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Payment Provider</span>
+                </button>
+              )}
               <button
                 onClick={() => setShowProfileModal(true)}
                 className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all cursor-pointer"
@@ -1600,19 +1636,26 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
             </div>
 
             <FzPayQrCode
-              upiUri={`upi://pay?pa=${encodeURIComponent(wallet?.upi_handle || 'user@fzpay')}&pn=${encodeURIComponent(wallet?.full_name || user.full_name || 'FZ User')}&cu=INR`}
-              payeeName={wallet?.full_name || user.full_name}
+              upiUri={`upi://pay?pa=${encodeURIComponent(paymentDestination?.destinationVpa || 'fzpay.merchant@icici')}&pn=${encodeURIComponent(paymentDestination?.displayName || wallet?.full_name || 'FZ PAY Merchant')}&cu=INR&tn=${encodeURIComponent(`FZ-${wallet?.id || 'WALLET'}`)}`}
+              payeeName={paymentDestination?.displayName || wallet?.full_name || user.full_name}
               size={180}
-              showDetails={false}
+              showDetails={true}
+              upiId={paymentDestination?.destinationVpa || wallet?.upi_handle}
             />
 
-            <div className="space-y-1">
-              <span className="text-sm font-black text-white">{wallet?.full_name || user.full_name}</span>
-              <div className="text-xs font-mono font-bold text-cyan-400">{wallet?.upi_handle}</div>
+            <div className="space-y-1.5 pt-2">
+              <div className="text-xs font-mono font-bold text-emerald-400 bg-slate-950 px-2.5 py-1 rounded border border-emerald-900/30 flex items-center justify-center gap-1.5">
+                <span className="text-[10px] text-slate-400 font-normal">Rail VPA:</span>
+                <span>{paymentDestination?.destinationVpa || 'fzpay.merchant@icici'}</span>
+              </div>
+              <div className="text-[11px] font-mono text-cyan-400 bg-slate-950 px-2.5 py-1 rounded border border-slate-800 flex items-center justify-center gap-1.5">
+                <span className="text-[10px] text-slate-400 font-normal">Internal Tag:</span>
+                <span>{wallet?.upi_handle}</span>
+              </div>
             </div>
 
             <p className="text-[10px] text-slate-400">
-              Scan with any UPI app (GPay, PhonePe, Paytm) to deposit directly into your FZ PAY internal wallet.
+              Scan with any UPI app (GPay, PhonePe, Paytm, BHIM) to settle into your FZ PAY wallet reference ({wallet?.id}).
             </p>
           </div>
         </div>
@@ -1952,6 +1995,13 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
         }}
         userFullName={user.full_name}
         userPhone={user.phone}
+      />
+
+      {/* OWNER PAYMENT PROVIDER CONFIGURATION MODAL */}
+      <OwnerPaymentConfigModal
+        isOpen={showOwnerPaymentModal}
+        onClose={() => setShowOwnerPaymentModal(false)}
+        userRole={user.role}
       />
     </PageTransition>
   );

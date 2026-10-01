@@ -667,7 +667,7 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
                       </div>
                     ) : (
                       <FzPayQrCode
-                        upiUri={paymentUri || `upi://pay?pa=${encodeURIComponent(upiDetails?.upi_id || 'fzpanel@upi')}&pn=FZ%20PAYMENT%20BANK&am=${amount}&cu=INR&tn=${encodeURIComponent(orderId)}`}
+                        upiUri={paymentUri || `upi://pay?pa=${encodeURIComponent(upiDetails?.upi_id || 'fzpay.merchant@icici')}&pn=FZ%20PAYMENT%20BANK&am=${amount}&cu=INR&tn=${encodeURIComponent(orderId)}`}
                         payeeName="FZ PAYMENT BANK"
                         amount={amount}
                         orderId={orderId}
