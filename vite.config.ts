@@ -11,16 +11,16 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'icon.svg', 'logo-master.svg'],
         manifest: {
           id: '/',
-          name: 'FZ Panel — Bot Management & Automation SaaS',
-          short_name: 'FZ Panel',
-          description: 'Production-grade Telegram Bot Commerce & SaaS Platform with instant digital delivery and automated payments.',
+          name: 'FZ PAY — Commerce & Digital Wallet Panel',
+          short_name: 'FZ PAY',
+          description: 'Production-grade Telegram Bot Commerce & FZ PAY Financial Platform with automated payments, dynamic UPI QR, and instant digital delivery.',
           theme_color: '#070b14',
           background_color: '#070b14',
           display: 'standalone',
-          orientation: 'portrait-primary',
+          orientation: 'any',
           start_url: '/',
           scope: '/',
           icons: [
@@ -78,7 +78,7 @@ export default defineConfig(() => {
           ]
         },
         devOptions: {
-          enabled: false
+          enabled: true
         }
       })
     ],

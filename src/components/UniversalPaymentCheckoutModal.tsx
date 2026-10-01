@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Subscription, Wallet as WalletType, Order } from '../types';
 import { api } from '../api';
+import { FzPayQrCode } from './FzPayQrCode';
 
 export interface UniversalCheckoutProps {
   isOpen: boolean;
@@ -646,49 +647,60 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
                 </div>
               ) : (
                 /* EXTERNAL PAYMENT (UPI QR / GATEWAY) */
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-                  {/* QR Presentation */}
-                  <div className="flex flex-col items-center justify-center p-4 bg-slate-950 border border-slate-800 rounded-2xl text-center space-y-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
+                  {/* Left Column: Professional QR (7 cols) */}
+                  <div className="md:col-span-7 flex flex-col items-center justify-center p-5 bg-slate-950 border border-slate-800 rounded-3xl text-center space-y-3">
+                    <div className="text-center space-y-0.5">
+                      <span className="text-[10px] uppercase font-mono tracking-widest text-cyan-400 font-bold block">
+                        FZ PAY
+                      </span>
+                      <h4 className="text-sm font-black text-white">PAYMENT REQUEST</h4>
+                      <div className="text-2xl font-black font-mono text-cyan-400">
+                        ₹{amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
                     {orderLoading ? (
-                      <div className="w-44 h-44 flex flex-col items-center justify-center text-slate-400 space-y-2">
-                        <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+                      <div className="w-52 h-52 flex flex-col items-center justify-center text-slate-400 space-y-2">
+                        <Loader2 className="w-7 h-7 animate-spin text-cyan-400" />
                         <span className="text-xs">Generating dynamic QR...</span>
                       </div>
-                    ) : qrImageUrl ? (
-                      <div className="p-2.5 bg-white rounded-xl shadow-lg shadow-black/40">
-                        <img
-                          src={qrImageUrl}
-                          alt="UPI Dynamic QR Code"
-                          className="w-40 h-40 object-contain"
-                        />
-                      </div>
                     ) : (
-                      <div className="w-44 h-44 flex items-center justify-center text-xs text-slate-500">
-                        QR Unavailable
-                      </div>
+                      <FzPayQrCode
+                        upiUri={paymentUri || `upi://pay?pa=${encodeURIComponent(upiDetails?.upi_id || 'fzpanel@upi')}&pn=FZ%20PAYMENT%20BANK&am=${amount}&cu=INR&tn=${encodeURIComponent(orderId)}`}
+                        payeeName="FZ PAYMENT BANK"
+                        amount={amount}
+                        orderId={orderId}
+                        size={170}
+                        showDetails={false}
+                      />
                     )}
-                    <div className="text-center">
-                      <div className="text-xs font-black text-white">Amount: ₹{amount}</div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate max-w-[200px]">
-                        {upiDetails?.upi_id || 'fzpanel@upi'}
-                      </div>
+
+                    <p className="text-[11px] text-slate-400 max-w-xs">
+                      Scan using your supported payment app (PhonePe, GPay, Paytm, BHIM, Cred).
+                    </p>
+
+                    <div className="text-xs font-mono text-slate-400 flex items-center justify-center space-x-3 pt-1 border-t border-slate-900 w-full">
+                      <span>Order ID: <strong className="text-white">{orderId}</strong></span>
+                      <span>·</span>
+                      <span>Expires: <strong className="text-cyan-400">{paymentStatus === 'EXPIRED' ? '00:00' : formatTimer(timeLeft)}</strong></span>
                     </div>
                   </div>
 
-                  {/* Direct UPI App / Details */}
-                  <div className="space-y-3">
-                    <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2.5">
+                  {/* Right Column: Direct Link & Action Buttons (5 cols) */}
+                  <div className="md:col-span-5 space-y-3">
+                    <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2.5">
                       <div className="text-xs font-bold text-white flex items-center justify-between">
-                        <span>Pay via UPI ID</span>
+                        <span>Official Payee UPI VPA</span>
                         <button
                           onClick={handleCopyUpi}
                           className="text-[10px] text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <Copy className="w-3 h-3" />
-                          <span>{copiedUpi ? 'Copied!' : 'Copy UPI'}</span>
+                          <span>{copiedUpi ? 'Copied!' : 'Copy'}</span>
                         </button>
                       </div>
-                      <div className="p-2 bg-slate-900 rounded-lg text-xs font-mono text-cyan-400 border border-slate-800 break-all select-all">
+                      <div className="p-2 bg-slate-900 rounded-lg text-xs font-mono text-cyan-400 border border-slate-800 break-all select-all font-bold">
                         {upiDetails?.upi_id || 'fzpanel@upi'}
                       </div>
 
@@ -697,22 +709,22 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
                           href={paymentUri}
                           className="w-full py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center space-x-1.5 transition-all shadow-md shadow-emerald-500/20"
                         >
-                          <span>Open in UPI App (GPay / PhonePe)</span>
+                          <span>Open in Mobile UPI App</span>
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       )}
                     </div>
 
-                    <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                      <div className="flex items-center space-x-1.5 text-emerald-400 font-bold text-[11px]">
-                        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                        <span>Server-Side Payment Verification</span>
+                    <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2.5">
+                      <div className="flex items-center space-x-1.5 text-emerald-400 font-bold text-xs">
+                        <ShieldCheck className="w-4 h-4 shrink-0" />
+                        <span>Instant Server Verification</span>
                       </div>
-                      <p className="text-[10px] text-slate-400 leading-relaxed">
-                        After completing the transfer in your payment app, tap the verify button below. Our server will query the provider to confirm receipt before activating.
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        After completing the transaction in your UPI app, click below. Backend verifies provider confirmation before order fulfillment.
                       </p>
 
-                      {/* 🔎 [ PAYMENT VERIFY ] BUTTON */}
+                      {/* ACTION BUTTONS: [ I HAVE PAID ] [ PAYMENT VERIFY ] [ CANCEL ] */}
                       {paymentStatus === 'EXPIRED' ? (
                         <button
                           type="button"
@@ -723,24 +735,44 @@ export const UniversalPaymentCheckoutModal: React.FC<UniversalCheckoutProps> = (
                           <span>Session Expired — Regenerate Order</span>
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={handlePaymentVerify}
-                          disabled={verifying || orderLoading}
-                          className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-xl text-xs transition-all shadow-md shadow-cyan-500/20 flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
-                        >
-                          {verifying ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Verifying Payment...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Check className="w-3.5 h-3.5 stroke-[3]" />
-                              <span>VERIFY PAYMENT</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="space-y-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handlePaymentVerify}
+                            disabled={verifying || orderLoading}
+                            className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-xs transition-all shadow-md shadow-emerald-500/20 flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
+                          >
+                            {verifying ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Verifying Payment...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-4 h-4 stroke-[3]" />
+                                <span>I HAVE PAID</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handlePaymentVerify}
+                            disabled={verifying || orderLoading}
+                            className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-xl text-xs transition-all shadow-md shadow-cyan-500/20 flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>PAYMENT VERIFY</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={onClose}
+                            className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+                          >
+                            CANCEL
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

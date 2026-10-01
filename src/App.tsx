@@ -16,6 +16,8 @@ import { AuthModal } from './components/AuthModal';
 import { CinematicIntro } from './components/CinematicIntro';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { FzPayKycModal } from './components/FzPayKycModal';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { PageTransition } from './components/PageTransition';
 
 // Views
 import { DashboardView } from './views/DashboardView';
@@ -44,7 +46,8 @@ import {
   Sliders,
   Sparkles,
   Loader2,
-  Wallet
+  Wallet,
+  Settings
 } from 'lucide-react';
 
 export function App() {
@@ -232,12 +235,15 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col antialiased">
+      {/* In-App PWA Install Banner */}
+      <PWAInstallBanner />
+
       {/* Cinematic Splash Screen */}
       {showIntro && (
         <CinematicIntro
           onComplete={() => setShowIntro(false)}
-          brandName="FZ PANEL"
-          tagline="NEXT-GEN TELEGRAM COMMERCE & BOT AUTOMATION SAAS"
+          brandName="FZ PAY"
+          tagline="SECURE TELEGRAM COMMERCE & DIGITAL WALLET"
         />
       )}
 
@@ -272,100 +278,122 @@ export function App() {
         />
 
         {/* View Port Content */}
-        <main className="flex-1 overflow-y-auto pb-20 md:pb-6">
+        <main className="flex-1 overflow-y-auto pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-6">
           {currentView === 'dashboard' && (
-            <DashboardView
-              stats={stats}
-              user={user}
-              activeBot={activeBot}
-              onOpenConnectBot={() => setShowConnectBot(true)}
-              onOpenCreateProduct={() => {
-                setProductToEdit(null);
-                setShowCreateProduct(true);
-              }}
-              onOpenLiveSimulator={() => setShowLiveSimulator(true)}
-              onOpenBroadcast={() => setShowBroadcast(true)}
-              onSelectOrder={setSelectedOrder}
-              onNavigate={handleNavigate}
-            />
+            <PageTransition variant="dashboard">
+              <DashboardView
+                stats={stats}
+                user={user}
+                activeBot={activeBot}
+                onOpenConnectBot={() => setShowConnectBot(true)}
+                onOpenCreateProduct={() => {
+                  setProductToEdit(null);
+                  setShowCreateProduct(true);
+                }}
+                onOpenLiveSimulator={() => setShowLiveSimulator(true)}
+                onOpenBroadcast={() => setShowBroadcast(true)}
+                onSelectOrder={setSelectedOrder}
+                onNavigate={handleNavigate}
+              />
+            </PageTransition>
           )}
 
           {currentView === 'bots' && (
-            <BotsView
-              bots={bots}
-              selectedBotId={selectedBotId}
-              onSelectBotId={setSelectedBotId}
-              onOpenConnectBot={() => setShowConnectBot(true)}
-              onOpenLiveSimulator={() => setShowLiveSimulator(true)}
-              onNavigateToEditor={botId => {
-                setSelectedBotId(botId);
-                handleNavigate('editor');
-              }}
-              onRefreshBots={loadCoreData}
-              onNavigate={handleNavigate}
-            />
+            <PageTransition variant="default">
+              <BotsView
+                bots={bots}
+                selectedBotId={selectedBotId}
+                onSelectBotId={setSelectedBotId}
+                onOpenConnectBot={() => setShowConnectBot(true)}
+                onOpenLiveSimulator={() => setShowLiveSimulator(true)}
+                onNavigateToEditor={botId => {
+                  setSelectedBotId(botId);
+                  handleNavigate('editor');
+                }}
+                onRefreshBots={loadCoreData}
+                onNavigate={handleNavigate}
+              />
+            </PageTransition>
           )}
 
           {currentView === 'editor' && (
-            <BotEditorView
-              bot={activeBot}
-              onOpenLiveSimulator={() => setShowLiveSimulator(true)}
-              user={user}
-              subscription={subscription}
-              onOpenCheckout={() => setShowCheckout(true)}
-            />
+            <PageTransition variant="editor">
+              <BotEditorView
+                bot={activeBot}
+                onOpenLiveSimulator={() => setShowLiveSimulator(true)}
+                user={user}
+                subscription={subscription}
+                onOpenCheckout={() => setShowCheckout(true)}
+              />
+            </PageTransition>
           )}
 
           {currentView === 'products' && (
-            <ProductsView
-              botId={selectedBotId}
-              onOpenCreateProduct={prod => {
-                setProductToEdit(prod || null);
-                setShowCreateProduct(true);
-              }}
-              onOpenLicensePool={prod => setLicensePoolProduct(prod)}
-            />
+            <PageTransition variant="products">
+              <ProductsView
+                botId={selectedBotId}
+                onOpenCreateProduct={prod => {
+                  setProductToEdit(prod || null);
+                  setShowCreateProduct(true);
+                }}
+                onOpenLicensePool={prod => setLicensePoolProduct(prod)}
+              />
+            </PageTransition>
           )}
 
           {currentView === 'orders' && (
-            <OrdersView
-              botId={selectedBotId}
-              onSelectOrder={setSelectedOrder}
-            />
+            <PageTransition variant="orders">
+              <OrdersView
+                botId={selectedBotId}
+                onSelectOrder={setSelectedOrder}
+              />
+            </PageTransition>
           )}
 
           {currentView === 'customers' && (
-            <CustomersView botId={selectedBotId} />
+            <PageTransition variant="default">
+              <CustomersView botId={selectedBotId} />
+            </PageTransition>
           )}
 
           {currentView === 'broadcasts' && (
-            <BroadcastsView
-              botId={selectedBotId}
-              onOpenBroadcastModal={() => setShowBroadcast(true)}
-            />
+            <PageTransition variant="default">
+              <BroadcastsView
+                botId={selectedBotId}
+                onOpenBroadcastModal={() => setShowBroadcast(true)}
+              />
+            </PageTransition>
           )}
 
           {currentView === 'coupons' && (
-            <CouponsView botId={selectedBotId} />
+            <PageTransition variant="default">
+              <CouponsView botId={selectedBotId} />
+            </PageTransition>
           )}
 
           {currentView === 'resellers' && (
-            <ResellerView user={user} />
+            <PageTransition variant="default">
+              <ResellerView user={user} />
+            </PageTransition>
           )}
 
           {currentView === 'billing' && (
-            <BillingView
-              subscription={subscription}
-              onOpenCheckout={() => setShowCheckout(true)}
-            />
+            <PageTransition variant="subscription">
+              <BillingView
+                subscription={subscription}
+                onOpenCheckout={() => setShowCheckout(true)}
+              />
+            </PageTransition>
           )}
 
           {currentView === 'subscriptions' && (
             (user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN') ? (
-              <SubscriptionManagementView
-                user={user}
-                onOpenCheckout={() => setShowCheckout(true)}
-              />
+              <PageTransition variant="subscription">
+                <SubscriptionManagementView
+                  user={user}
+                  onOpenCheckout={() => setShowCheckout(true)}
+                />
+              </PageTransition>
             ) : (
               <div className="p-8 text-center">
                 <div className="max-w-md mx-auto p-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400">
@@ -382,11 +410,17 @@ export function App() {
             )
           )}
 
-          {currentView === 'hosting' && <HostingView />}
+          {currentView === 'hosting' && (
+            <PageTransition variant="default">
+              <HostingView />
+            </PageTransition>
+          )}
 
           {currentView === 'admin' && (
             (user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'SUPER ADMIN') ? (
-              <AdminView />
+              <PageTransition variant="default">
+                <AdminView />
+              </PageTransition>
             ) : (
               <div className="p-8 text-center">
                 <div className="max-w-md mx-auto p-6 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400">
@@ -403,7 +437,11 @@ export function App() {
             )
           )}
 
-          {currentView === 'settings' && <SettingsView user={user} />}
+          {currentView === 'settings' && (
+            <PageTransition variant="settings">
+              <SettingsView user={user} />
+            </PageTransition>
+          )}
 
           {currentView === 'fz-pay' && (
             <FzPayView
@@ -415,14 +453,14 @@ export function App() {
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#0f172a] border-t border-slate-800 flex items-center justify-around px-2 z-40">
+      {/* Mobile Bottom Navigation Bar (Requirement 27: HOME, PRODUCTS, FZ PAY, ORDERS, SETTINGS) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0f172a] border-t border-slate-800 flex items-center justify-around px-2 z-40 pb-[env(safe-area-inset-bottom)] pt-1 h-[calc(3.75rem+env(safe-area-inset-bottom))]">
         {[
-          { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
-          { id: 'bots', label: 'Bots', icon: Bot },
+          { id: 'dashboard', label: 'HOME', icon: LayoutDashboard },
+          { id: 'products', label: 'PRODUCTS', icon: Package },
           { id: 'fz-pay', label: 'FZ PAY', icon: Wallet },
-          { id: 'products', label: 'Products', icon: Package },
-          { id: 'orders', label: 'Orders', icon: ShoppingCart }
+          { id: 'orders', label: 'ORDERS', icon: ShoppingCart },
+          { id: 'settings', label: 'SETTINGS', icon: Settings }
         ].map(item => {
           const Icon = item.icon;
           const isActive = currentView === item.id;
@@ -430,7 +468,7 @@ export function App() {
             <button
               key={item.id}
               onClick={() => handleNavigate(item.id)}
-              className={`flex flex-col items-center justify-center space-y-1 py-1 px-3 rounded-lg text-[10px] font-semibold transition-colors ${
+              className={`flex flex-col items-center justify-center space-y-1 py-1 px-3 rounded-lg text-[10px] font-bold tracking-wider transition-colors cursor-pointer ${
                 isActive ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-200'
               }`}
             >

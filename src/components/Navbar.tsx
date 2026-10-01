@@ -83,12 +83,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           onClick={() => onNavigate('dashboard')}
           className="flex items-center space-x-2.5 cursor-pointer group"
         >
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
-            <Bot className="w-5 h-5 text-white" />
+          <div className="w-9 h-9 rounded-xl overflow-hidden shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform p-0.5 bg-gradient-to-tr from-cyan-500/40 via-slate-800 to-emerald-500/40 border border-cyan-400/30">
+            <img src="/logo-master.svg" alt="FZ PAY" className="w-full h-full object-contain rounded-lg" />
           </div>
           <div className="hidden sm:block">
-            <span className="text-lg font-black tracking-tight text-white flex items-center gap-1.5">
-              FZ PANEL <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-extrabold uppercase tracking-wider">ENGINE</span>
+            <span className="text-lg font-black tracking-tight text-white flex items-center gap-1.5 font-mono">
+              FZ PAY <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-extrabold uppercase tracking-wider">PANEL</span>
             </span>
           </div>
         </div>

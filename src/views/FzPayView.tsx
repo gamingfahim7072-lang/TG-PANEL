@@ -50,6 +50,11 @@ import {
 import { User, Wallet as WalletType, WalletTransaction, Order, Subscription } from '../types';
 import { api } from '../api';
 import { FzPayKycModal } from '../components/FzPayKycModal';
+import { WalletCinematicIntroModal } from '../components/WalletCinematicIntroModal';
+import { WalletProfileModal } from '../components/WalletProfileModal';
+import { WalletSettingsModal } from '../components/WalletSettingsModal';
+import { FzPayQrCode } from '../components/FzPayQrCode';
+import { PageTransition } from '../components/PageTransition';
 
 interface FzPayViewProps {
   user: User;
@@ -130,6 +135,8 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
   const [showKycModal, setShowKycModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showCinematicIntro, setShowCinematicIntro] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
 
   // Settings & PIN State
   const [userPin, setUserPin] = useState('1234');
@@ -531,46 +538,123 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
   });
 
   return (
-    <div className="space-y-6 pb-12 max-w-7xl mx-auto">
-      {/* 1. INITIAL STATE: NEW PANEL USER MUST NOT HAVE AN FZ PAY WALLET */}
+    <PageTransition variant="fz-pay" className="space-y-6 pb-12 max-w-7xl mx-auto">
+      {/* 1. STRICT WALLET LIFECYCLE STATES: WALLET COMPLETELY HIDDEN BEFORE CREATION */}
       {!isWalletActive ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-14 text-center max-w-2xl mx-auto space-y-6 shadow-2xl animate-in fade-in duration-300">
-          <div className="w-20 h-20 rounded-3xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center mx-auto shadow-xl shadow-cyan-500/10">
-            <CreditCard className="w-10 h-10" />
-          </div>
-
-          <div className="space-y-2">
-            <span className="text-xs uppercase font-mono tracking-widest text-cyan-400 font-bold block">
-              💳 FZ PAY
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-black text-white">
-              Wallet not created
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
-              Your normal panel account and FZ PAY wallet are separate. To activate your prepaid closed-loop wallet and virtual RuPay card, complete the verified KYC onboarding flow.
-            </p>
-          </div>
-
-          <div className="pt-2">
-            <button
-              onClick={() => setShowKycModal(true)}
-              className="px-8 py-3.5 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-black rounded-2xl text-xs sm:text-sm transition-all shadow-xl shadow-cyan-500/25 flex items-center justify-center space-x-2.5 mx-auto cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>CREATE FZ PAY WALLET</span>
-            </button>
-          </div>
-
-          <div className="pt-6 border-t border-slate-800/80 grid grid-cols-2 gap-3 text-[11px] text-slate-400 max-w-md mx-auto">
-            <div className="flex items-center justify-center space-x-1.5 text-emerald-400 font-semibold">
-              <ShieldCheck className="w-4 h-4" />
-              <span>No Real Bank Link Required</span>
+        <div className="max-w-2xl mx-auto space-y-6">
+          {/* A. KYC PENDING STATE */}
+          {wallet?.kyc_status === 'KYC_PENDING' ? (
+            <div className="bg-slate-900 border border-amber-500/30 rounded-3xl p-8 sm:p-12 text-center space-y-5 shadow-2xl animate-in fade-in">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
+                <Clock className="w-8 h-8 animate-spin" />
+              </div>
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold block">
+                  VERIFICATION EN ROUTE
+                </span>
+                <h2 className="text-2xl font-black text-white">KYC VERIFICATION IN PROGRESS</h2>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Your identity documents have been submitted to the verification provider. Document status is pending final provider clearance.
+                </p>
+              </div>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition-all flex items-center justify-center space-x-2 mx-auto cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                <span>REFRESH STATUS</span>
+              </button>
             </div>
-            <div className="flex items-center justify-center space-x-1.5 text-cyan-400 font-semibold">
-              <Lock className="w-4 h-4" />
-              <span>FamPay Closed-Loop</span>
+          ) : wallet?.kyc_status === 'KYC_FAILED' ? (
+            /* B. KYC FAILED STATE */
+            <div className="bg-slate-900 border border-red-500/30 rounded-3xl p-8 sm:p-12 text-center space-y-5 shadow-2xl animate-in fade-in">
+              <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-red-400 font-bold block">
+                  ACTION REQUIRED
+                </span>
+                <h2 className="text-2xl font-black text-white">KYC VERIFICATION FAILED</h2>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Identity verification was not approved. Please verify your legal full name, 12-digit Aadhaar checksum, and valid date of birth (18+) before retrying.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCinematicIntro(true)}
+                className="px-6 py-2.5 bg-red-500 hover:bg-red-400 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center space-x-2 mx-auto cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>RETRY KYC VERIFICATION</span>
+              </button>
             </div>
-          </div>
+          ) : wallet?.status === 'SUSPENDED' ? (
+            /* C. SUSPENDED STATE */
+            <div className="bg-slate-900 border border-red-500/30 rounded-3xl p-8 sm:p-12 text-center space-y-5 shadow-2xl">
+              <div className="w-16 h-16 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center mx-auto">
+                <Lock className="w-8 h-8" />
+              </div>
+              <h2 className="text-2xl font-black text-white">WALLET TEMPORARILY SUSPENDED</h2>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                Please contact FZ PAY compliance support at @fzpay_support to reactivate your wallet.
+              </p>
+            </div>
+          ) : (
+            /* D. NOT_CREATED STATE: PREMIUM LOCKED WALLET VISUAL */
+            <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-8 sm:p-14 text-center space-y-6 shadow-2xl animate-in fade-in duration-300 relative overflow-hidden">
+              <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none" />
+
+              {/* Locked Futuristic Card Visual */}
+              <div className="relative mx-auto w-full max-w-xs aspect-[1.586/1] rounded-2xl bg-gradient-to-br from-[#0c1424] via-[#101b33] to-[#070b14] border border-cyan-500/30 p-4 shadow-xl flex flex-col justify-between overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black tracking-widest text-cyan-400 font-mono">FZ PAY CARD</span>
+                  <div className="w-7 h-5 rounded bg-amber-400/70 border border-amber-300/80" />
+                </div>
+
+                <div className="my-auto flex items-center justify-center space-x-2 py-2">
+                  <div className="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center border border-cyan-500/30">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <span className="font-mono text-xs tracking-widest text-slate-400 font-bold uppercase">
+                    WALLET NOT ACTIVATED
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-[9px] text-slate-500 uppercase font-mono">
+                  <span>PREPAID CLOSED-LOOP</span>
+                  <span className="text-slate-400 font-bold">RuPay</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-xs uppercase font-mono tracking-widest text-cyan-400 font-bold block">
+                  💳 FZ PAY WALLET
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-black text-white">
+                  CREATE YOUR OWN WALLET
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Create your secure FZ PAY wallet to unlock payments, QR, transfers and wallet features.
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={() => setShowCinematicIntro(true)}
+                  className="px-8 py-3.5 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-black rounded-2xl text-xs sm:text-sm transition-all shadow-xl shadow-cyan-500/25 flex items-center justify-center space-x-2.5 mx-auto cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>CREATE YOUR WALLET</span>
+                </button>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800/80 text-[11px] text-slate-400 max-w-md mx-auto flex items-center justify-center space-x-2 text-cyan-300">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>KYC verification is required before your wallet can be activated.</span>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* 2. AFTER KYC: COMPLETE 💳 FZ PAY ACTIVE DASHBOARD */
@@ -1510,18 +1594,17 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
               <span className="text-xs font-black text-indigo-400 uppercase tracking-wider font-mono">
                 MY FZ PAY QR CODE
               </span>
-              <button onClick={() => setShowReceiveMoney(false)} className="text-slate-400 hover:text-white p-1">
+              <button onClick={() => setShowReceiveMoney(false)} className="text-slate-400 hover:text-white p-1 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-3 bg-white rounded-2xl shadow-xl mx-auto w-fit">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=${encodeURIComponent(wallet?.upi_handle || 'user@fzpay')}&pn=${encodeURIComponent(wallet?.full_name || 'FZ User')}`}
-                alt="Personal UPI QR"
-                className="w-52 h-52 object-contain"
-              />
-            </div>
+            <FzPayQrCode
+              upiUri={`upi://pay?pa=${encodeURIComponent(wallet?.upi_handle || 'user@fzpay')}&pn=${encodeURIComponent(wallet?.full_name || user.full_name || 'FZ User')}&cu=INR`}
+              payeeName={wallet?.full_name || user.full_name}
+              size={180}
+              showDetails={false}
+            />
 
             <div className="space-y-1">
               <span className="text-sm font-black text-white">{wallet?.full_name || user.full_name}</span>
@@ -1601,13 +1684,14 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
                 </form>
               ) : (
                 <div className="space-y-4 text-center">
-                  <div className="p-3 bg-white rounded-2xl shadow-xl mx-auto w-fit">
-                    <img
-                      src={depositOrder.qrImageUrl}
-                      alt="Deposit QR"
-                      className="w-48 h-48 object-contain"
-                    />
-                  </div>
+                  <FzPayQrCode
+                    upiUri={depositOrder.paymentUri || `upi://pay?pa=${encodeURIComponent(depositOrder.upiDetails?.upi_id || 'fzpanel@upi')}&pn=FZ%20PAYMENT%20BANK&am=${depositOrder.amount}&cu=INR&tn=${encodeURIComponent(depositOrder.orderId)}`}
+                    payeeName="FZ PAYMENT BANK"
+                    amount={depositOrder.amount}
+                    orderId={depositOrder.orderId}
+                    size={180}
+                    showDetails={false}
+                  />
 
                   <div className="space-y-1">
                     <span className="text-xs font-mono font-bold text-white">Amount: ₹{depositOrder.amount}</span>
@@ -1788,6 +1872,76 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
         </div>
       )}
 
+      {/* MODAL: CINEMATIC WALLET INTRO */}
+      <WalletCinematicIntroModal
+        isOpen={showCinematicIntro}
+        onClose={() => setShowCinematicIntro(false)}
+        onGetStarted={() => {
+          setShowCinematicIntro(false);
+          setShowKycModal(true);
+        }}
+      />
+
+      {/* MODAL: WALLET PROFILE */}
+      <WalletProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        wallet={wallet}
+        user={user}
+      />
+
+      {/* MODAL: WALLET SETTINGS */}
+      <WalletSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        wallet={wallet}
+        user={user}
+      />
+
+      {/* MODAL: WALLET CREATION ALERT (NEW USER ENTRY) */}
+      {showAlertModal && !isWalletActive && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-[#0b0f19] border border-cyan-500/30 rounded-3xl w-full max-w-md shadow-2xl p-6 sm:p-8 text-center space-y-5 relative overflow-hidden">
+            <div className="w-16 h-16 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center mx-auto shadow-xl shadow-cyan-500/10">
+              <CreditCard className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-xs uppercase font-mono tracking-widest text-cyan-400 font-bold block">
+                💳 CREATE YOUR OWN WALLET
+              </span>
+              <h3 className="text-xl font-black text-white">Your FZ PAY Wallet Awaits</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Your FZ PAY wallet hasn't been created yet. Complete verification to create your wallet and unlock all FZ PAY features.
+              </p>
+            </div>
+
+            <div className="space-y-2.5 pt-2">
+              <button
+                onClick={() => {
+                  setShowAlertModal(false);
+                  setShowCinematicIntro(true);
+                }}
+                className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black rounded-xl text-xs transition-all shadow-lg shadow-cyan-500/25 flex items-center justify-center space-x-2 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>CREATE WALLET</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowAlertModal(false);
+                  sessionStorage.setItem('fzpay_alert_dismissed', 'true');
+                }}
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white font-semibold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                MAYBE LATER
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* REUSABLE KYC ONBOARDING MODAL */}
       <FzPayKycModal
         isOpen={showKycModal}
@@ -1799,6 +1953,6 @@ export const FzPayView: React.FC<FzPayViewProps> = ({ user, onOpenCheckout, onNa
         userFullName={user.full_name}
         userPhone={user.phone}
       />
-    </div>
+    </PageTransition>
   );
 };
