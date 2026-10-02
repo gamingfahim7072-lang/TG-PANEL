@@ -305,17 +305,45 @@ export interface ProductKey {
   order_id?: string;
 }
 
+export interface PaymentOrder {
+  id: string;
+  user_id: string;
+  order_type: 'PRODUCT_KEY' | 'SUBSCRIPTION' | 'WALLET_DEPOSIT';
+  product_id?: string;
+  subscription_id?: string;
+  wallet_id?: string;
+  amount: number;
+  currency: string;
+  status: 'CREATED' | 'PENDING' | 'PROCESSING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'REFUNDED' | 'MANUAL_REVIEW';
+  provider: string;
+  provider_payment_id?: string;
+  provider_transaction_id?: string;
+  transaction_reference: string;
+  expires_at: string;
+  paid_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PaymentProviderConfig {
   id: string;
   provider: 'UPI' | 'RAZORPAY' | 'CASHFREE' | 'PHONEPE' | 'STRIPE' | 'SANDBOX';
-  name: string;
-  display_name: string;
+  provider_name?: string;
+  provider_account_id?: string;
+  merchant_id?: string;
+  merchant_name?: string;
+  upi_vpa?: string;
+  name?: string;
+  display_name?: string;
   is_enabled: boolean;
   environment: 'TEST' | 'LIVE';
-  merchant_id?: string;
   api_key?: string;
   api_secret?: string;
   webhook_secret?: string;
+  api_key_encrypted?: string;
+  api_secret_encrypted?: string;
+  webhook_secret_encrypted?: string;
+  status?: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'NOT_CONFIGURED' | 'FAILED';
   instructions?: string;
   created_at: string;
   updated_at: string;
@@ -942,6 +970,7 @@ export interface DatabaseSchema {
   wallet_transactions: WalletTransaction[];
   webhook_events: WebhookEvent[];
   kyc_verifications: KycVerification[];
+  payment_orders: PaymentOrder[];
 }
 
 export class Database {
@@ -1340,6 +1369,7 @@ export class Database {
       wallet_transactions: [],
       webhook_events: [],
       kyc_verifications: [],
+      payment_orders: [],
       subscription_settings: {
         id: 'sub-settings-01',
         is_enabled: true,
@@ -1510,6 +1540,8 @@ export class Database {
   public set webhook_events(val: WebhookEvent[]) { this.data.webhook_events = val; }
   public get kyc_verifications(): KycVerification[] { return this.data.kyc_verifications || []; }
   public set kyc_verifications(val: KycVerification[]) { this.data.kyc_verifications = val; }
+  public get payment_orders(): PaymentOrder[] { return this.data.payment_orders || []; }
+  public set payment_orders(val: PaymentOrder[]) { this.data.payment_orders = val; }
 }
 
 export const db = new Database();

@@ -5835,9 +5835,30 @@ apiRouter.post('/owner/payment-provider/test', authenticate, async (req: Authent
   }
 });
 
+apiRouter.get('/owner/payment-diagnostics', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const isAuthorized = user.role === 'OWNER' || user.role === 'SUPER ADMIN' || user.role === 'ADMIN';
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Unauthorized: Owner access required.' });
+    }
+
+    const diagnostics = await PaymentProviderRegistry.getDiagnostics();
+    return res.json({ success: true, diagnostics });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 apiRouter.get('/payment/destination', async (_req: Request, res: Response) => {
   const dest = PaymentProviderRegistry.getPaymentDestination();
-  return res.json({ success: true, destination: dest });
+  const configStatus = PaymentProviderRegistry.isProviderConfigured();
+  return res.json({
+    success: true,
+    destination: dest,
+    isConfigured: configStatus.isConfigured,
+    reason: configStatus.reason
+  });
 });
 
 // Notifications

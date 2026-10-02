@@ -10,9 +10,11 @@ import {
   WalletTransaction,
   WebhookEvent,
   LedgerTransaction,
-  PaymentProviderConfig
+  PaymentProviderConfig,
+  PaymentOrder
 } from './db.js';
 import { logAudit } from './auth.js';
+import { PaymentProviderRegistry } from './paymentProvider.js';
 
 export interface VerificationResult {
   success: boolean;
@@ -281,6 +283,28 @@ export class RealPaymentEngine {
           console.error('Stripe verification error:', err);
         }
       }
+    } else if (provider === 'UPI') {
+      try {
+        const upiProvider = PaymentProviderRegistry.getProvider('UPI');
+        const upiRes = await upiProvider.verifyPayment(currentOrder.id, transactionId, gatewayPaymentId);
+        if (upiRes.success && upiRes.status === 'PAID') {
+          providerConfirmed = true;
+          providerTxId = upiRes.transactionId || providerTxId;
+        }
+      } catch (err) {
+        console.error('UPI provider verification error:', err);
+      }
+    } else if (provider === 'SANDBOX') {
+      try {
+        const sboxProvider = PaymentProviderRegistry.getProvider('SANDBOX');
+        const sboxRes = await sboxProvider.verifyPayment(currentOrder.id, transactionId);
+        if (sboxRes.success && sboxRes.status === 'PAID') {
+          providerConfirmed = true;
+          providerTxId = sboxRes.transactionId || providerTxId;
+        }
+      } catch (err) {
+        console.error('Sandbox verification error:', err);
+      }
     }
 
     // 6. Check if a verified webhook has already credited this order
@@ -290,7 +314,33 @@ export class RealPaymentEngine {
       providerTxId = webhookEvent.event_id || providerTxId;
     }
 
-    // 7. If provider confirmed payment: Execute atomic fulfillment!
+    // 7. Security: Duplicate payment settlement protection (Requirement 14)
+    if (providerConfirmed && providerTxId) {
+      const duplicateSettlement = (db.payments || []).find(
+        p => p.id !== currentPayment.id && p.order_id !== currentOrder.id && p.transaction_id === providerTxId && (p.status === 'PAID' || p.status === 'SUCCESS')
+      );
+      if (duplicateSettlement) {
+        return {
+          success: false,
+          status: 'FAILED',
+          message: 'Security validation failed: This provider transaction reference has already been settled for another order.'
+        };
+      }
+    }
+
+    // 8. Security: Wrong Amount Reconciliation (Requirement 13)
+    if (providerConfirmed && (Number(currentPayment.amount) <= 0 || isNaN(currentPayment.amount))) {
+      currentPayment.status = 'MANUAL_REVIEW';
+      currentOrder.status = 'MANUAL_REVIEW';
+      db.saveImmediately();
+      return {
+        success: false,
+        status: 'MANUAL_REVIEW',
+        message: 'Payment order flagged for manual review due to invalid expected amount.'
+      };
+    }
+
+    // 9. If provider confirmed payment: Execute atomic fulfillment!
     if (providerConfirmed) {
       return this.executePaidOrderActions({
         order: currentOrder,
