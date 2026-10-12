@@ -1,7 +1,7 @@
 import React from 'react';
 import { TelegramBot, Order, DigitalProduct } from '../types';
 import {
-  DollarSign,
+  IndianRupee,
   ShoppingCart,
   Users,
   Flame,
@@ -9,28 +9,37 @@ import {
   Zap,
   ArrowUpRight,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  QrCode,
+  Wallet
 } from 'lucide-react';
 
 interface AnalyticsViewProps {
   bot: TelegramBot;
   orders: Order[];
   products: DigitalProduct[];
+  onNavigateToUpi?: () => void;
+  onNavigateToSimulator?: () => void;
 }
 
-export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bot, orders, products }) => {
+export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
+  bot,
+  orders,
+  products,
+  onNavigateToUpi,
+  onNavigateToSimulator,
+}) => {
   const botOrders = orders.filter((o) => o.botId === bot.id);
-  const totalRevenue = botOrders.reduce((acc, curr) => acc + curr.amount, 0) + bot.totalRevenue;
-  const starsOrders = botOrders.filter((o) => o.paymentMethod === 'stars').length;
-  const tonOrders = botOrders.filter((o) => o.paymentMethod === 'ton').length;
-  const usdtOrders = botOrders.filter((o) => o.paymentMethod === 'usdt').length;
+  const upiOrders = botOrders.filter((o) => o.paymentMethod === 'upi_dynamic_qr');
+  const upiRevenue = upiOrders.reduce((acc, curr) => acc + curr.amount, 0);
+  const totalRevenue = bot.totalRevenue + upiRevenue;
 
   const totalKeysDelivered = products
     .filter((p) => p.botId === bot.id)
     .reduce((acc, curr) => acc + curr.soldKeysCount, 0);
 
   // Sparkline data
-  const chartPoints = [240, 310, 450, 420, 680, 890, 1140, 980, 1420, 1680, 1950, 2400];
+  const chartPoints = [2400, 3100, 4500, 4200, 6800, 8900, 11400, 9800, 14200, 16800, 19500, 26240];
   const maxVal = Math.max(...chartPoints);
   const minVal = Math.min(...chartPoints);
 
@@ -54,66 +63,72 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bot, orders, produ
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            Connected to Telegram Bot API · Automatic digital key pool & Telegram Stars checkout active
+            Connected to Telegram Bot API · Dynamic UPI QR Generation ({bot.paymentAccount?.mode === 'MODE_A_PROVIDER' ? 'Provider Mode A' : 'Mode B Manual'}) · VPA: {bot.paymentAccount?.upiId || 'merchant@upi'}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-2 text-right">
-            <span className="text-[10px] uppercase font-bold text-slate-500">Bot Handle</span>
-            <div className="text-sm font-bold text-cyan-400">@{bot.username}</div>
-          </div>
+          {onNavigateToSimulator && (
+            <button
+              onClick={onNavigateToSimulator}
+              className="flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-cyan-600/20 hover:bg-cyan-500 active:scale-95 transition"
+            >
+              <QrCode className="h-4 w-4" />
+              <span>Test UPI Checkout</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Gross Revenue */}
+        {/* Gross Revenue INR */}
         <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Total Bot Revenue</span>
             <span className="rounded-lg bg-emerald-500/10 p-2 text-emerald-400 border border-emerald-500/20">
-              <DollarSign className="h-4 w-4" />
+              <IndianRupee className="h-4 w-4" />
             </span>
           </div>
           <div className="mt-3 text-2xl font-extrabold text-white">
-            ${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ₹{totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
             <TrendingUp className="h-3.5 w-3.5" />
-            <span>+18.4% vs last week</span>
+            <span>+24.8% vs last week</span>
           </div>
         </div>
 
-        {/* Telegram Stars Volume */}
-        <div className="rounded-xl border border-amber-500/30 bg-amber-950/10 p-4">
+        {/* Dynamic UPI Volume */}
+        <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/10 p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-amber-300">Telegram Stars Invoicing</span>
-            <span className="rounded-lg bg-amber-500/20 p-2 text-amber-400 border border-amber-500/30">
-              <Flame className="h-4 w-4 fill-amber-400" />
+            <span className="text-xs font-semibold text-cyan-300">UPI Dynamic QR Volume</span>
+            <span className="rounded-lg bg-cyan-500/20 p-2 text-cyan-400 border border-cyan-500/30">
+              <QrCode className="h-4 w-4" />
             </span>
           </div>
           <div className="mt-3 text-2xl font-extrabold text-white">
-            ⭐ {(totalRevenue * 48).toLocaleString()}
+            ₹{(totalRevenue * 0.78).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          <div className="mt-2 text-xs text-amber-400 font-medium">
-            0% fee direct in-app checkout
+          <div className="mt-2 text-xs text-cyan-400 font-medium flex items-center gap-1">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>78% via GPay, PhonePe, Paytm</span>
           </div>
         </div>
 
-        {/* Orders / Keys Delivered */}
+        {/* Keys Delivered */}
         <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Keys Dispatched</span>
-            <span className="rounded-lg bg-cyan-500/10 p-2 text-cyan-400 border border-cyan-500/20">
+            <span className="rounded-lg bg-blue-500/10 p-2 text-blue-400 border border-blue-500/20">
               <ShoppingCart className="h-4 w-4" />
             </span>
           </div>
           <div className="mt-3 text-2xl font-extrabold text-white">
             {totalKeysDelivered + botOrders.length}
           </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-cyan-400 font-medium">
-            <ShieldCheck className="h-3.5 w-3.5" />
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-blue-400 font-medium">
+            <CheckCircle2 className="h-3.5 w-3.5" />
             <span>100% automated delivery</span>
           </div>
         </div>
@@ -122,7 +137,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bot, orders, produ
         <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Bot Subscribers</span>
-            <span className="rounded-lg bg-blue-500/10 p-2 text-blue-400 border border-blue-500/20">
+            <span className="rounded-lg bg-purple-500/10 p-2 text-purple-400 border border-purple-500/20">
               <Users className="h-4 w-4" />
             </span>
           </div>
@@ -141,11 +156,11 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bot, orders, produ
         <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-white">Sales & Volume Trajectory (30 Days)</h3>
-              <p className="text-xs text-slate-400">Real-time revenue settled across Stars, TON, and USDT</p>
+              <h3 className="text-sm font-bold text-white">UPI & Multi-Currency Sales Trajectory (30 Days)</h3>
+              <p className="text-xs text-slate-400">Real-time revenue settled across Dynamic UPI QR and Stars</p>
             </div>
             <div className="text-right">
-              <span className="text-xs font-bold text-emerald-400">+34% this month</span>
+              <span className="text-xs font-bold text-emerald-400">+42% with Dynamic UPI</span>
             </div>
           </div>
 
@@ -157,12 +172,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bot, orders, produ
                   <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
-              {/* Area */}
               <polygon
                 points={`0,150 ${pointsString} 500,150`}
                 fill="url(#revenueGrad)"
               />
-              {/* Line */}
               <polyline
                 fill="none"
                 stroke="#06b6d4"
@@ -191,40 +204,43 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bot, orders, produ
           <div className="space-y-3.5 pt-2">
             <div>
               <div className="flex justify-between text-xs font-semibold mb-1">
+                <span className="flex items-center gap-1.5 text-cyan-300">
+                  <QrCode className="h-3.5 w-3.5 text-cyan-400" />
+                  <span>Dynamic UPI QR (Razorpay/Bank)</span>
+                </span>
+                <span className="text-white">78%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                <div className="h-full bg-cyan-400 rounded-full" style={{ width: '78%' }} />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs font-semibold mb-1">
                 <span className="flex items-center gap-1.5 text-amber-300">
                   <Flame className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
                   <span>Telegram Stars</span>
                 </span>
-                <span className="text-white">58%</span>
+                <span className="text-white">16%</span>
               </div>
               <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div className="h-full bg-amber-400 rounded-full" style={{ width: '58%' }} />
+                <div className="h-full bg-amber-400 rounded-full" style={{ width: '16%' }} />
               </div>
             </div>
 
             <div>
               <div className="flex justify-between text-xs font-semibold mb-1">
-                <span className="text-sky-400 font-mono">TON Network (The Open Network)</span>
-                <span className="text-white">28%</span>
+                <span className="text-emerald-400 font-mono">TON & USDT Crypto</span>
+                <span className="text-white">6%</span>
               </div>
               <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div className="h-full bg-sky-400 rounded-full" style={{ width: '28%' }} />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex justify-between text-xs font-semibold mb-1">
-                <span className="text-emerald-400 font-mono">USDT TRC20 / Stripe</span>
-                <span className="text-white">14%</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                <div className="h-full bg-emerald-400 rounded-full" style={{ width: '14%' }} />
+                <div className="h-full bg-emerald-400 rounded-full" style={{ width: '6%' }} />
               </div>
             </div>
           </div>
 
           <div className="mt-4 rounded-lg bg-slate-950 p-3 text-xs text-slate-400 border border-slate-800">
-            💡 <strong>Pro Tip:</strong> Enabling Telegram Stars increases bot checkout conversions by over 45% because users pay without leaving Telegram.
+            ⚡ <strong>Dynamic UPI QR Advantage:</strong> Exact order-amount-encoded QRs eliminate customer entry errors and support instant banking webhooks.
           </div>
         </div>
       </div>

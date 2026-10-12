@@ -1,17 +1,28 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TelegramBot, DigitalProduct, Order } from '../types';
+import { TelegramBot, DigitalProduct, Order, PaymentStatus } from '../types';
+import {
+  calculateOrderPrice,
+  buildUpiPayload,
+  generateDynamicQrDataUrl,
+  simulateServerVerification,
+} from '../utils/upiQrService';
 import {
   Send,
-  Sparkles,
   RefreshCw,
   CheckCircle,
   Copy,
   ExternalLink,
   Shield,
   CreditCard,
-  Key,
+  QrCode,
   Flame,
-  ArrowLeft
+  ArrowLeft,
+  AlertTriangle,
+  Clock,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
+  HelpCircle
 } from 'lucide-react';
 
 interface TelegramSimulatorProps {
@@ -26,19 +37,28 @@ interface ChatMessage {
   sender: 'user' | 'bot';
   text?: string;
   time: string;
-  inlineButtons?: { text: string; action: () => void; variant?: 'primary' | 'stars' | 'ton' }[][];
-  invoice?: {
-    product: DigitalProduct;
-    price: number;
-    currency: string;
-    method: 'stars' | 'ton' | 'usdt';
+  inlineButtons?: { text: string; action: () => void; variant?: 'primary' | 'stars' | 'upi' | 'danger' }[][];
+  upiQrCard?: {
+    orderId: string;
+    productTitle: string;
+    amount: number;
+    paymentAccountName: string;
+    paymentStatus: PaymentStatus;
+    qrDataUrl: string;
+    upiPayload: string;
+    expiresAt: string;
+    isManualOnly?: boolean;
+    orderRef: Order;
   };
   delivery?: {
     payload: string;
     type: string;
     productTitle: string;
+    orderId: string;
   };
 }
+
+import { getDefaultPaymentAccount } from '../utils/defaults';
 
 export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
   bot,
@@ -46,10 +66,12 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
   onOrderCreated,
   onClose,
 }) => {
+  const paymentAccount = bot.paymentAccount || getDefaultPaymentAccount(bot.id, bot.name, bot.username);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [activePendingOrder, setActivePendingOrder] = useState<Order | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const getNowTime = () => {
@@ -57,14 +79,13 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Initialize with /start simulation
   useEffect(() => {
     sendBotWelcome();
   }, [bot.id]);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, paymentProcessing]);
+  }, [messages, isVerifying]);
 
   const sendBotWelcome = () => {
     const initialUserMsg: ChatMessage = {
@@ -81,11 +102,13 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
       time: getNowTime(),
       inlineButtons: [
         [
-          { text: '🛍 Browse Catalog', action: () => handleShowCatalog(), variant: 'primary' },
-          { text: '📦 My Orders & Keys', action: () => handleShowOrders() }
+          { text: '🛍 Browse Products (Dynamic UPI QR)', action: () => handleShowCatalog(), variant: 'upi' }
         ],
         [
           { text: '⭐ Pay with Stars (0% Fee)', action: () => handleShowCatalog('stars'), variant: 'stars' },
+          { text: '📦 My Orders & Keys', action: () => handleShowOrders() }
+        ],
+        [
           { text: '💬 Support & FAQ', action: () => handleSupport() }
         ]
       ]
@@ -94,216 +117,364 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
     setMessages([initialUserMsg, initialBotMsg]);
   };
 
-  const handleShowCatalog = (preferredPayment?: 'stars') => {
-    const activeProducts = products.filter(p => p.active);
-    
+  const handleShowCatalog = (filterMethod?: 'stars') => {
+    const activeProducts = products.filter((p) => p.botId === bot.id && p.active);
+
     const botReply: ChatMessage = {
       id: `m-cat-${Date.now()}`,
       sender: 'bot',
-      text: `🛒 *${bot.name} Product Catalog*\n\nChoose an item below to check real-time stock and checkout instantly:`,
+      text: `🛒 *${bot.name} Product Catalog*\n\nChoose an item below to check real-time stock and checkout with *Automatic Dynamic UPI QR*:`,
       time: getNowTime(),
-      inlineButtons: activeProducts.map(prod => [
+      inlineButtons: activeProducts.map((prod) => [
         {
-          text: `${prod.badge ? `[${prod.badge}] ` : ''}${prod.title} — $${prod.priceUsd}`,
-          action: () => handleSelectProduct(prod, preferredPayment)
+          text: `${prod.badge ? `[${prod.badge}] ` : ''}${prod.title} — ₹${(prod.priceInr ?? 320).toFixed(2)}`,
+          action: () => handleSelectProduct(prod),
+          variant: 'primary'
         }
       ])
     };
 
-    setMessages(prev => [...prev, botReply]);
+    setMessages((prev) => [...prev, botReply]);
   };
 
-  const handleSelectProduct = (product: DigitalProduct, preferredPayment?: 'stars') => {
-    const stockInfo = product.stockType === 'key_pool'
-      ? `🔑 Available in pool: *${product.availableKeys.length} keys*`
-      : '⚡ Instant digital access';
+  const handleSelectProduct = (product: DigitalProduct) => {
+    const stockInfo =
+      product.stockType === 'key_pool'
+        ? `🔑 Available in pool: *${product.availableKeys.length} license keys*`
+        : '⚡ Instant digital access';
+
+    const priceInrDisplay = (product.priceInr ?? 320).toFixed(2);
 
     const reply: ChatMessage = {
       id: `m-prod-${Date.now()}`,
       sender: 'bot',
-      text: `📦 *${product.title}*\n\n${product.description}\n\n${stockInfo}\n\n*Pricing:*\n• USD: $${product.priceUsd}\n• Telegram Stars: ⭐ ${product.priceStars}\n• TON: 💎 ${product.priceTon} TON`,
+      text: `📦 *${product.title}*\n\n${product.description}\n\n${stockInfo}\n\n*Official Pricing:*\n• UPI (India): *₹${priceInrDisplay}*\n• Telegram Stars: ⭐ ${product.priceStars}\n• TON Network: 💎 ${product.priceTon} TON\n\nApplicable Terms: Instant automated server dispatch upon verified payment confirmation.`,
       time: getNowTime(),
       inlineButtons: [
         [
           {
+            text: `💳 BUY NOW — ₹${priceInrDisplay} (Dynamic UPI QR)`,
+            action: () => handleInitiateDynamicUpiPurchase(product),
+            variant: 'upi'
+          }
+        ],
+        [
+          {
             text: `⭐ Buy with Stars (${product.priceStars} Stars)`,
-            action: () => handleCreateInvoice(product, 'stars'),
+            action: () => handleLegacyCheckout(product, 'stars'),
+            variant: 'stars'
+          },
+          {
+            text: '« Back to Catalog',
+            action: () => handleShowCatalog()
+          }
+        ]
+      ]
+    };
+
+    setMessages((prev) => [...prev, reply]);
+  };
+
+  /**
+   * STEP 5 to 10: Backend Authoritative Price Calculation & Dynamic QR Generation
+   */
+  const handleInitiateDynamicUpiPurchase = async (product: DigitalProduct) => {
+    const calc = calculateOrderPrice(product, 1, 0);
+    const orderId = `FB-ORD-${Math.floor(10000 + Math.random() * 90000)}`;
+    const expiresAt = new Date(Date.now() + paymentAccount.qrExpiryMinutes * 60000);
+
+    const upiUri = buildUpiPayload(
+      paymentAccount.upiId,
+      paymentAccount.accountName,
+      calc.finalAmount,
+      orderId,
+      product.title
+    );
+
+    let qrDataUrl = '';
+    try {
+      qrDataUrl = await generateDynamicQrDataUrl(upiUri);
+    } catch (e) {
+      console.error(e);
+    }
+
+    const newOrder: Order = {
+      id: orderId,
+      botId: bot.id,
+      productId: product.id,
+      productTitle: product.title,
+      customerTelegramId: '984120491',
+      customerUsername: 'alex_nordic',
+      baseAmount: calc.baseAmount,
+      discountAmount: calc.discountAmount,
+      taxAmount: calc.taxAmount,
+      amount: calc.finalAmount,
+      currency: 'INR',
+      paymentMethod: 'upi_dynamic_qr',
+      qrGenerationMode: paymentAccount.mode,
+      merchantAccountRef: `${paymentAccount.accountName} (${paymentAccount.upiId})`,
+      providerOrderId: `rzp_${orderId.toLowerCase()}`,
+      status: 'PAYMENT_PENDING',
+      qrPayload: upiUri,
+      qrExpiresAt: expiresAt.toISOString(),
+      deliveredPayload: '',
+      fulfillmentStatus: 'UNFULFILLED',
+      createdAt: new Date().toISOString(),
+      isTestTransaction: paymentAccount.isTestMode,
+    };
+
+    setActivePendingOrder(newOrder);
+    onOrderCreated(newOrder);
+
+    const isManualOnly = paymentAccount.mode === 'MODE_B_MANUAL_UPI';
+
+    const qrMsg: ChatMessage = {
+      id: `m-qr-${Date.now()}`,
+      sender: 'bot',
+      time: getNowTime(),
+      upiQrCard: {
+        orderId,
+        productTitle: product.title,
+        amount: calc.finalAmount,
+        paymentAccountName: paymentAccount.accountName,
+        paymentStatus: 'PAYMENT_PENDING',
+        qrDataUrl,
+        upiPayload: upiUri,
+        expiresAt: expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isManualOnly,
+        orderRef: newOrder,
+      },
+      inlineButtons: [
+        [
+          {
+            text: `💳 PAY NOW (₹${calc.finalAmount.toFixed(2)})`,
+            action: () => handlePayNowIntent(upiUri),
+            variant: 'upi'
+          },
+          {
+            text: '🔄 CHECK PAYMENT STATUS',
+            action: () => handleCheckPaymentStatus(newOrder, product, false),
+            variant: 'primary'
+          }
+        ],
+        [
+          {
+            text: '⚡ Simulate Bank Payment (Test Switch)',
+            action: () => handleCheckPaymentStatus(newOrder, product, true),
             variant: 'stars'
           }
         ],
         [
           {
-            text: `💎 Buy with TON (${product.priceTon} TON)`,
-            action: () => handleCreateInvoice(product, 'ton'),
-            variant: 'ton'
+            text: '❌ CANCEL ORDER',
+            action: () => handleCancelOrder(orderId),
+            variant: 'danger'
           },
           {
-            text: `💵 USDT TRC20 ($${product.priceUsd})`,
-            action: () => handleCreateInvoice(product, 'usdt')
+            text: '💬 CONTACT SUPPORT',
+            action: () => handleSupport()
           }
-        ],
-        [
-          { text: '« Back to Catalog', action: () => handleShowCatalog() }
         ]
       ]
     };
 
-    setMessages(prev => [...prev, reply]);
+    setMessages((prev) => [...prev, qrMsg]);
   };
 
-  const handleCreateInvoice = (product: DigitalProduct, method: 'stars' | 'ton' | 'usdt') => {
-    const invoiceMsg: ChatMessage = {
-      id: `m-inv-${Date.now()}`,
+  const handlePayNowIntent = (upiUri: string) => {
+    // Copies upi:// link or attempts intent
+    navigator.clipboard.writeText(upiUri);
+    const intentMsg: ChatMessage = {
+      id: `m-intent-${Date.now()}`,
       sender: 'bot',
-      text: `🧾 *Telegram In-App Invoice Generated*\n\nItem: ${product.title}\nDelivery Method: Instant Bot Automated Dispatch`,
+      text: `📱 *UPI Intent Triggered:*\n\nUPI URI copied to clipboard: \`${upiUri}\`\n\nOpen Google Pay, PhonePe, Paytm, or BHIM to complete the exact payment of ₹${activePendingOrder?.amount.toFixed(2)}.`,
       time: getNowTime(),
-      invoice: {
-        product,
-        price: method === 'stars' ? product.priceStars : (method === 'ton' ? product.priceTon : product.priceUsd),
-        currency: method === 'stars' ? 'Stars' : (method === 'ton' ? 'TON' : 'USDT'),
-        method
-      }
     };
-
-    setMessages(prev => [...prev, invoiceMsg]);
+    setMessages((prev) => [...prev, intentMsg]);
   };
 
-  const executePayment = (product: DigitalProduct, method: 'stars' | 'ton' | 'usdt') => {
-    setPaymentProcessing(true);
+  /**
+   * STEP 11 to 13: Backend Payment Verification Request
+   * Never marks paid by itself without authenticated server-side verification!
+   */
+  const handleCheckPaymentStatus = (order: Order, product: DigitalProduct, forceSimulationSuccess = false) => {
+    setIsVerifying(true);
 
     setTimeout(() => {
-      setPaymentProcessing(false);
+      setIsVerifying(false);
 
-      // Pick key or generate invite link
-      let deliveredContent = '';
-      if (product.type === 'license_key') {
-        deliveredContent = product.availableKeys[0] || `LIC-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-      } else if (product.type === 'vip_channel') {
-        deliveredContent = `https://t.me/+VIP_Invite_${Math.random().toString(36).substring(2, 10)}`;
-      } else {
-        deliveredContent = `https://downloads.telesell.cloud/deliveries/vault-${Date.now()}.zip`;
-      }
+      const verification = simulateServerVerification(order, bot, forceSimulationSuccess);
 
-      const newOrder: Order = {
-        id: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
-        botId: bot.id,
-        productId: product.id,
-        productTitle: product.title,
-        customerTelegramId: '849201948',
-        customerUsername: 'demo_user_telegram',
-        amount: product.priceUsd,
-        currency: method === 'stars' ? 'STARS' : (method === 'ton' ? 'TON' : 'USD'),
-        paymentMethod: method,
-        status: 'completed',
-        deliveredPayload: deliveredContent,
-        createdAt: new Date().toISOString(),
-        txHash: method === 'stars' ? `STARS-TX-${Math.floor(100000 + Math.random() * 900000)}` : `0x${Math.random().toString(16).substring(2, 10)}...`
-      };
+      if (verification.success && verification.newStatus === 'PAYMENT_SUCCESSFUL') {
+        // FULFILL PRODUCT DELIVERED
+        let deliveredContent = '';
+        if (product.type === 'license_key') {
+          deliveredContent =
+            product.availableKeys[0] ||
+            `W11P-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-99X`;
+        } else if (product.type === 'vip_channel') {
+          deliveredContent = `https://t.me/+VIP_Invite_${Math.random().toString(36).substring(2, 8)}`;
+        } else {
+          deliveredContent = `https://downloads.telesell.cloud/deliveries/vault-${Date.now()}.zip`;
+        }
 
-      onOrderCreated(newOrder);
+        const updatedOrder: Order = {
+          ...order,
+          status: 'PAYMENT_SUCCESSFUL',
+          providerTxId: verification.providerTxId,
+          verificationTimestamp: new Date().toISOString(),
+          deliveredPayload: deliveredContent,
+          fulfillmentStatus: 'DELIVERED',
+        };
 
-      const successMsg: ChatMessage = {
-        id: `m-paid-${Date.now()}`,
-        sender: 'bot',
-        text: `🎉 *Payment Successful!*\n\nThank you for purchasing *${product.title}* via ${method.toUpperCase()}.\nOrder ID: \`${newOrder.id}\`\n\nYour digital asset has been dispatched below:`,
-        time: getNowTime(),
-        delivery: {
-          payload: deliveredContent,
-          type: product.type,
-          productTitle: product.title
-        },
-        inlineButtons: [
-          [
-            { text: '🛍 Buy Another Item', action: () => handleShowCatalog() },
-            { text: '⭐️ Rate Bot (5/5)', action: () => handleRate() }
+        setActivePendingOrder(null);
+        onOrderCreated(updatedOrder);
+
+        const successMsg: ChatMessage = {
+          id: `m-success-${Date.now()}`,
+          sender: 'bot',
+          text: `━━━━━━━━━━━━━━━━━━━━\n🎉 *PAYMENT VERIFIED & CONFIRMED*\n━━━━━━━━━━━━━━━━━━━━\n\nOrder ID: \`${order.id}\`\nAmount Received: *₹${order.amount.toFixed(2)}*\nMerchant: *${paymentAccount.accountName}*\nProvider TX ID: \`${verification.providerTxId}\`\nStatus: *PAYMENT_SUCCESSFUL*\n\nYour digital asset has been dispatched below:`,
+          time: getNowTime(),
+          delivery: {
+            payload: deliveredContent,
+            type: product.type,
+            productTitle: product.title,
+            orderId: order.id,
+          },
+          inlineButtons: [
+            [
+              { text: '🛍 Buy Another Item', action: () => handleShowCatalog(), variant: 'primary' },
+              { text: '📦 View My Orders', action: () => handleShowOrders() }
+            ]
           ]
-        ]
-      };
+        };
 
-      setMessages(prev => [...prev, successMsg]);
-    }, 1200);
+        setMessages((prev) => [...prev, successMsg]);
+      } else if (verification.isManualOnly) {
+        // Mode B Alert
+        const alertMsg: ChatMessage = {
+          id: `m-manual-${Date.now()}`,
+          sender: 'bot',
+          text: `⚠️ *MANUAL VERIFICATION — AUTOMATIC CONFIRMATION UNAVAILABLE*\n\nThis bot operates in Mode B (UPI-ID fallback). Your order reference \`${order.id}\` is in status *PENDING_VERIFICATION*.\n\nPlease share your UTR / transaction ID with @KeyVaultAdmin for manual review. Product will be released after human confirmation.`,
+          time: getNowTime(),
+          inlineButtons: [
+            [
+              { text: '💬 Contact Admin for Manual Audit', action: () => handleSupport(), variant: 'primary' },
+              { text: '« Back to Store', action: () => handleShowCatalog() }
+            ]
+          ]
+        };
+        setMessages((prev) => [...prev, alertMsg]);
+      } else {
+        // Customer Alert: Payment not yet confirmed
+        const alertMsg: ChatMessage = {
+          id: `m-alert-${Date.now()}`,
+          sender: 'bot',
+          text: `⏳ *PAYMENT NOT CONFIRMED*\n\nYour order is still awaiting payment confirmation.\n\nOrder ID: \`${order.id}\`\nAmount: *₹${order.amount.toFixed(2)} INR*\nStatus: *PAYMENT_PENDING*\n\nPlease complete your payment using the QR code above or check the status again. Your product will be delivered automatically after server-side verification.`,
+          time: getNowTime(),
+          inlineButtons: [
+            [
+              {
+                text: '🔄 CHECK PAYMENT STATUS AGAIN',
+                action: () => handleCheckPaymentStatus(order, product, false),
+                variant: 'primary'
+              },
+              {
+                text: '⚡ Simulate Bank Payment (Test)',
+                action: () => handleCheckPaymentStatus(order, product, true),
+                variant: 'stars'
+              }
+            ],
+            [
+              { text: '❌ CANCEL ORDER', action: () => handleCancelOrder(order.id), variant: 'danger' },
+              { text: '💬 CONTACT SUPPORT', action: () => handleSupport() }
+            ]
+          ]
+        };
+
+        setMessages((prev) => [...prev, alertMsg]);
+      }
+    }, 800);
+  };
+
+  const handleCancelOrder = (orderId: string) => {
+    setActivePendingOrder(null);
+    const cancelMsg: ChatMessage = {
+      id: `m-cancel-${Date.now()}`,
+      sender: 'bot',
+      text: `❌ *Order Cancelled*\n\nOrder \`${orderId}\` has been marked as cancelled. Any pending payment request has been invalidated.`,
+      time: getNowTime(),
+      inlineButtons: [
+        [{ text: '🛍 Return to Catalog', action: () => handleShowCatalog() }]
+      ]
+    };
+    setMessages((prev) => [...prev, cancelMsg]);
+  };
+
+  const handleLegacyCheckout = (product: DigitalProduct, method: 'stars') => {
+    const orderId = `FB-ORD-${Math.floor(10000 + Math.random() * 90000)}`;
+    const newOrder: Order = {
+      id: orderId,
+      botId: bot.id,
+      productId: product.id,
+      productTitle: product.title,
+      customerTelegramId: '984120491',
+      customerUsername: 'alex_nordic',
+      baseAmount: product.priceInr,
+      discountAmount: 0,
+      taxAmount: 0,
+      amount: product.priceStars,
+      currency: 'STARS',
+      paymentMethod: 'stars',
+      qrGenerationMode: 'MODE_A_PROVIDER',
+      merchantAccountRef: 'Telegram Stars Merchant Desk',
+      providerOrderId: `stars_${orderId}`,
+      status: 'PAYMENT_SUCCESSFUL',
+      deliveredPayload: product.availableKeys[0] || 'KEY-STAR-9921',
+      fulfillmentStatus: 'DELIVERED',
+      createdAt: new Date().toISOString(),
+      verificationTimestamp: new Date().toISOString(),
+    };
+
+    onOrderCreated(newOrder);
+
+    const successMsg: ChatMessage = {
+      id: `m-paid-stars-${Date.now()}`,
+      sender: 'bot',
+      text: `🎉 *Telegram Stars Payment Successful!*\n\nPaid ⭐ ${product.priceStars} Stars.\nDelivered License Key: \`${newOrder.deliveredPayload}\``,
+      time: getNowTime(),
+      inlineButtons: [
+        [{ text: '🛍 Buy Another Item', action: () => handleShowCatalog() }]
+      ]
+    };
+
+    setMessages((prev) => [...prev, successMsg]);
   };
 
   const handleShowOrders = () => {
     const ordersReply: ChatMessage = {
       id: `m-orders-${Date.now()}`,
       sender: 'bot',
-      text: `📋 *Your Active TeleSell Purchases:*\n\n1. Windows 11 Pro Key: \`W11P-77A9-994K-112B\`\n2. Alpha Whale Telegram: Active (Expires in 28 days)\n\nAll past license keys remain permanently accessible in this chat.`,
+      text: `📋 *Your Active TeleDash / FINE BOTUS Purchases:*\n\n1. Basic Product (Windows 11 Key): \`W11P-77A9-994K-112B\`\n2. Office 2024 Bind Key: \`OFF24-PRO-1149-KK92\`\n\nAll purchased license keys remain permanently archived in your Telegram chat history.`,
       time: getNowTime(),
       inlineButtons: [
         [{ text: '« Back to Main Menu', action: () => sendBotWelcome() }]
       ]
     };
-    setMessages(prev => [...prev, ordersReply]);
+    setMessages((prev) => [...prev, ordersReply]);
   };
 
   const handleSupport = () => {
     const supportReply: ChatMessage = {
       id: `m-sup-${Date.now()}`,
       sender: 'bot',
-      text: `💬 *TeleSell 24/7 Automated Support*\n\nIf your license key failed to activate, or you require help joining the private Telegram community, please message @TeleSellSupportDesk or type your issue here.`,
+      text: `💬 *FINE BOTUS 24/7 Automated Merchant Support*\n\nIf you experienced any issue with Dynamic UPI QR generation or payment verification for @${bot.username}, please message @KeyVaultAdmin or provide your Order ID.`,
       time: getNowTime(),
       inlineButtons: [
         [{ text: '« Back to Main Menu', action: () => sendBotWelcome() }]
       ]
     };
-    setMessages(prev => [...prev, supportReply]);
-  };
-
-  const handleRate = () => {
-    const rateReply: ChatMessage = {
-      id: `m-rate-${Date.now()}`,
-      sender: 'bot',
-      text: `⭐ Thank you for your 5-star rating! Your feedback helps us maintain premium uptime and instant key delivery.`,
-      time: getNowTime()
-    };
-    setMessages(prev => [...prev, rateReply]);
-  };
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim()) return;
-
-    const trimmed = inputText.trim();
-    const userMsg: ChatMessage = {
-      id: `m-user-${Date.now()}`,
-      sender: 'user',
-      text: trimmed,
-      time: getNowTime()
-    };
-
-    setMessages(prev => [...prev, userMsg]);
-    setInputText('');
-
-    // Process Bot Response
-    setTimeout(() => {
-      const lower = trimmed.toLowerCase();
-      if (lower === '/start' || lower === 'start') {
-        sendBotWelcome();
-      } else if (lower === '/catalog' || lower.includes('buy') || lower.includes('catalog')) {
-        handleShowCatalog();
-      } else if (lower === '/orders' || lower.includes('order') || lower.includes('license')) {
-        handleShowOrders();
-      } else if (lower === '/support' || lower.includes('help')) {
-        handleSupport();
-      } else {
-        const foundCommand = bot.commands.find(c => c.command.toLowerCase() === lower);
-        const replyText = foundCommand
-          ? foundCommand.response
-          : `🤖 Echo: Received "${trimmed}". Use /start to open the interactive storefront.`;
-
-        const fallbackReply: ChatMessage = {
-          id: `m-bot-${Date.now()}`,
-          sender: 'bot',
-          text: replyText,
-          time: getNowTime(),
-          inlineButtons: [
-            [{ text: '🛍 Open Catalog', action: () => handleShowCatalog() }]
-          ]
-        };
-        setMessages(prev => [...prev, fallbackReply]);
-      }
-    }, 400);
+    setMessages((prev) => [...prev, supportReply]);
   };
 
   const copyToClipboard = (text: string) => {
@@ -322,18 +493,18 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
               onClick={onClose}
               className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-white"
             >
-              <ArrowLeft className="h-4 w-4" /> Back
+              <ArrowLeft className="h-4 w-4" /> Back to Dashboard
             </button>
           )}
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>Interactive Telegram Bot Client</span>
+              <span>FINE BOTUS — Telegram Live Simulator</span>
               <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400 border border-emerald-500/20">
-                Live Simulation
+                Dynamic UPI QR Active
               </span>
             </h2>
             <p className="text-xs text-slate-400">
-              Test end-to-end checkout, Telegram Stars invoicing, and real-time serial key dispatch
+              Test end-to-end customer checkout, product-price-based Dynamic UPI QR generation, and server-side payment verification
             </p>
           </div>
         </div>
@@ -369,7 +540,7 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
           </div>
           <div className="flex items-center gap-2 text-xs text-[#708499]">
             <Shield className="h-4 w-4 text-emerald-400" />
-            <span>Verified</span>
+            <span>UPI Verified</span>
           </div>
         </div>
 
@@ -382,7 +553,7 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
             >
               {/* Message Bubble */}
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm text-xs leading-relaxed ${
+                className={`max-w-[88%] rounded-2xl px-4 py-2.5 shadow-sm text-xs leading-relaxed ${
                   msg.sender === 'user'
                     ? 'bg-[#2b5278] text-white rounded-br-none'
                     : 'bg-[#182533] text-slate-200 border border-slate-700/40 rounded-bl-none'
@@ -394,53 +565,77 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
                   </div>
                 )}
 
-                {/* In-App Invoice Card */}
-                {msg.invoice && (
-                  <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-950/30 p-3 text-slate-100">
-                    <div className="flex items-center justify-between pb-2 border-b border-amber-500/20">
-                      <div className="flex items-center gap-1.5 font-bold text-amber-400">
-                        <Flame className="h-4 w-4 fill-amber-400 text-amber-400" />
-                        <span>Telegram In-App Invoice</span>
-                      </div>
-                      <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-                        Instant Delivery
-                      </span>
+                {/* DYNAMIC UPI QR PAYMENT CARD */}
+                {msg.upiQrCard && (
+                  <div className="mt-3 rounded-xl border border-cyan-500/40 bg-slate-950 p-3.5 text-slate-100 shadow-xl">
+                    <div className="text-center font-bold text-xs tracking-wider text-cyan-400 pb-2 border-b border-slate-800">
+                      ━━━━━━━━━━━━━━━━━━━━<br />
+                      💎 FINE BOTUS — SECURE PAYMENT<br />
+                      ━━━━━━━━━━━━━━━━━━━━
                     </div>
 
                     <div className="my-2 space-y-1 text-[11px] text-slate-300">
                       <div className="flex justify-between">
-                        <span>Total Due:</span>
-                        <span className="font-extrabold text-white text-xs">
-                          {msg.invoice.method === 'stars' && '⭐ '}
-                          {msg.invoice.method === 'ton' && '💎 '}
-                          {msg.invoice.price} {msg.invoice.currency}
+                        <span className="text-slate-400">🛒 Product:</span>
+                        <span className="font-bold text-white">{msg.upiQrCard.productTitle}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">🆔 Order ID:</span>
+                        <span className="font-mono text-cyan-300">{msg.upiQrCard.orderId}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">💰 Amount to Pay:</span>
+                        <span className="font-extrabold text-sm text-emerald-400">
+                          ₹{msg.upiQrCard.amount.toFixed(2)}
                         </span>
                       </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>Merchant:</span>
-                        <span>{bot.name}</span>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">👤 Payment Account:</span>
+                        <span className="text-slate-200 truncate max-w-[170px]">
+                          {msg.upiQrCard.paymentAccountName}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">📌 Payment Status:</span>
+                        <span className="font-bold text-amber-400">
+                          {msg.upiQrCard.paymentStatus}
+                        </span>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => executePayment(msg.invoice!.product, msg.invoice!.method)}
-                      disabled={paymentProcessing}
-                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 py-2 text-xs font-bold text-slate-950 transition hover:brightness-110 active:scale-95 disabled:opacity-50"
-                    >
-                      {paymentProcessing ? (
-                        <>
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                          <span>Simulating Telegram Stars Ledger...</span>
-                        </>
+                    {msg.upiQrCard.isManualOnly && (
+                      <div className="my-2 rounded bg-amber-500/10 p-2 text-[10px] text-amber-300 border border-amber-500/20">
+                        ⚠️ <strong>MANUAL VERIFICATION MODE:</strong> Automatic payment confirmation is unavailable. Order will be marked after merchant audit.
+                      </div>
+                    )}
+
+                    {/* QR Code Container */}
+                    <div className="my-3 flex flex-col items-center justify-center rounded-xl bg-white p-3 shadow-inner">
+                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-800 mb-1">
+                        📲 SCAN QR CODE TO PAY
+                      </div>
+                      {msg.upiQrCard.qrDataUrl ? (
+                        <img
+                          src={msg.upiQrCard.qrDataUrl}
+                          alt="Dynamic UPI QR"
+                          className="h-44 w-44 rounded-lg object-contain"
+                        />
                       ) : (
-                        <>
-                          <CreditCard className="h-3.5 w-3.5" />
-                          <span>
-                            Pay {msg.invoice.price} {msg.invoice.currency} Now
-                          </span>
-                        </>
+                        <div className="h-44 w-44 flex items-center justify-center text-slate-500 text-xs">
+                          Generating QR...
+                        </div>
                       )}
-                    </button>
+                      <div className="mt-1 text-[10px] font-semibold text-slate-700">
+                        Amount: ₹{msg.upiQrCard.amount.toFixed(2)} · Order: {msg.upiQrCard.orderId}
+                      </div>
+                      <div className="text-[9px] text-slate-500">
+                        Expires At: {msg.upiQrCard.expiresAt}
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-slate-400 text-center italic">
+                      After completing the payment, press the button below to request a payment-status check.
+                    </p>
                   </div>
                 )}
 
@@ -477,9 +672,9 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
                 </div>
               </div>
 
-              {/* Inline Telegram Keyboard Buttons */}
+              {/* Inline Telegram Buttons */}
               {msg.inlineButtons && msg.inlineButtons.length > 0 && (
-                <div className="mt-2 w-full max-w-[85%] space-y-1.5">
+                <div className="mt-2 w-full max-w-[88%] space-y-1.5">
                   {msg.inlineButtons.map((row, rIdx) => (
                     <div key={rIdx} className="flex gap-1.5">
                       {row.map((btn, bIdx) => (
@@ -487,10 +682,12 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
                           key={bIdx}
                           onClick={btn.action}
                           className={`flex-1 rounded-xl px-3 py-2 text-center text-xs font-semibold shadow transition active:scale-95 ${
-                            btn.variant === 'stars'
+                            btn.variant === 'upi'
+                              ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold hover:brightness-110 shadow-cyan-600/20'
+                              : btn.variant === 'stars'
                               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
-                              : btn.variant === 'ton'
-                              ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30'
+                              : btn.variant === 'danger'
+                              ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30 hover:bg-rose-500/20'
                               : btn.variant === 'primary'
                               ? 'bg-[#2b5278] text-white hover:bg-[#34628f]'
                               : 'bg-[#242f3d] text-slate-200 border border-slate-700/40 hover:bg-[#2c394a]'
@@ -506,9 +703,9 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
             </div>
           ))}
 
-          {paymentProcessing && (
-            <div className="flex items-center gap-2 text-xs text-amber-400 italic">
-              <Sparkles className="h-3.5 w-3.5 animate-spin" /> Verifying blockchain signature / Stars authorization...
+          {isVerifying && (
+            <div className="flex items-center gap-2 text-xs text-cyan-400 italic">
+              <Sparkles className="h-3.5 w-3.5 animate-spin" /> Querying authenticated provider banking webhook/API...
             </div>
           )}
 
@@ -517,14 +714,38 @@ export const TelegramSimulator: React.FC<TelegramSimulatorProps> = ({
 
         {/* Input Bar */}
         <form
-          onSubmit={handleSendMessage}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!inputText.trim()) return;
+            const text = inputText.trim();
+            setInputText('');
+            const userMsg: ChatMessage = {
+              id: `m-user-${Date.now()}`,
+              sender: 'user',
+              text,
+              time: getNowTime()
+            };
+            setMessages(prev => [...prev, userMsg]);
+            setTimeout(() => {
+              const lower = text.toLowerCase();
+              if (lower === '/start' || lower === 'start') {
+                sendBotWelcome();
+              } else if (lower.includes('catalog') || lower.includes('buy')) {
+                handleShowCatalog();
+              } else if (lower.includes('order')) {
+                handleShowOrders();
+              } else {
+                handleSupport();
+              }
+            }, 300);
+          }}
           className="flex items-center gap-2 border-t border-slate-700/60 bg-[#17212b] p-3"
         >
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Type a message or /command (/start, /catalog, /orders)..."
+            placeholder="Type /start, /catalog, or ask a question..."
             className="flex-1 rounded-xl border border-slate-700/50 bg-[#0e1621] px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
           />
           <button

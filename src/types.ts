@@ -1,5 +1,23 @@
 export type BotStatus = 'online' | 'paused' | 'error' | 'deploying';
 
+export type QrGenerationMode = 'MODE_A_PROVIDER' | 'MODE_B_MANUAL_UPI';
+
+export interface UpiPaymentAccount {
+  id: string;
+  accountName: string;
+  upiId: string;
+  merchantProvider: 'Razorpay' | 'Cashfree' | 'PayU' | 'Decentro' | 'Custom Gateway';
+  merchantAccountId: string;
+  mode: QrGenerationMode;
+  apiKeyConfigured: boolean;
+  dynamicQrSupported: boolean;
+  autoVerificationEnabled: boolean;
+  manualVerificationAvailable: boolean;
+  paymentsEnabled: boolean;
+  isTestMode: boolean;
+  qrExpiryMinutes: number;
+}
+
 export interface TelegramBot {
   id: string;
   name: string;
@@ -10,9 +28,11 @@ export interface TelegramBot {
   totalOrders: number;
   totalRevenue: number;
   welcomeMessage: string;
-  currency: 'USD' | 'STARS' | 'TON';
+  currency: 'INR' | 'USD' | 'STARS' | 'TON';
   themeColor: string;
+  paymentAccount: UpiPaymentAccount;
   features: {
+    upiDynamicQr: boolean;
     starsPayment: boolean;
     cryptoPayment: boolean;
     autoKeyDelivery: boolean;
@@ -32,9 +52,12 @@ export interface DigitalProduct {
   title: string;
   description: string;
   type: ProductType;
+  priceInr: number;
   priceUsd: number;
   priceStars: number;
   priceTon: number;
+  discountPercent?: number;
+  taxPercent?: number;
   stockType: 'unlimited' | 'key_pool' | 'subscription';
   availableKeys: string[];
   soldKeysCount: number;
@@ -42,8 +65,18 @@ export interface DigitalProduct {
   active: boolean;
 }
 
-export type OrderStatus = 'completed' | 'pending' | 'failed' | 'refunded';
-export type PaymentMethod = 'stars' | 'ton' | 'usdt' | 'stripe';
+export type PaymentStatus =
+  | 'PAYMENT_REQUIRED'
+  | 'PAYMENT_PENDING'
+  | 'VERIFYING_PAYMENT'
+  | 'PAYMENT_SUCCESSFUL'
+  | 'PAYMENT_FAILED'
+  | 'PAYMENT_EXPIRED'
+  | 'PENDING_VERIFICATION'
+  | 'REFUND_PENDING'
+  | 'REFUNDED';
+
+export type PaymentMethod = 'upi_dynamic_qr' | 'upi_manual' | 'stars' | 'ton' | 'usdt' | 'stripe';
 
 export interface Order {
   id: string;
@@ -52,13 +85,25 @@ export interface Order {
   productTitle: string;
   customerTelegramId: string;
   customerUsername: string;
+  baseAmount: number;
+  discountAmount: number;
+  taxAmount: number;
   amount: number;
-  currency: string;
+  currency: 'INR' | 'USD' | 'STARS' | 'TON';
   paymentMethod: PaymentMethod;
-  status: OrderStatus;
+  qrGenerationMode: QrGenerationMode;
+  merchantAccountRef: string;
+  providerOrderId: string;
+  providerTxId?: string;
+  status: PaymentStatus;
+  qrPayload?: string;
+  qrExpiresAt?: string;
   deliveredPayload: string;
+  fulfillmentStatus: 'UNFULFILLED' | 'DELIVERY_PENDING' | 'DELIVERED' | 'FAILED_RETRYING';
   createdAt: string;
+  verificationTimestamp?: string;
   txHash?: string;
+  isTestTransaction?: boolean;
 }
 
 export interface BroadcastCampaign {
@@ -72,4 +117,12 @@ export interface BroadcastCampaign {
   deliveredPercent: number;
   status: 'sent' | 'scheduled' | 'draft';
   sentAt: string;
+}
+
+export interface PlatformSubscriptionSettings {
+  enabled: boolean;
+  platformMerchantId: string;
+  platformUpiId: string;
+  planName: string;
+  planMonthlyFeeInr: number;
 }

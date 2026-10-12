@@ -13,7 +13,9 @@ import {
   AlertCircle,
   Eye,
   FileCode,
-  Users
+  Users,
+  QrCode,
+  IndianRupee
 } from 'lucide-react';
 
 interface ProductCatalogProps {
@@ -22,6 +24,7 @@ interface ProductCatalogProps {
   onSaveProduct: (product: DigitalProduct) => void;
   onDeleteProduct: (productId: string) => void;
   onAddKeys: (productId: string, keys: string[]) => void;
+  onNavigateToPaymentSettings?: () => void;
 }
 
 export const ProductCatalog: React.FC<ProductCatalogProps> = ({
@@ -30,6 +33,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   onSaveProduct,
   onDeleteProduct,
   onAddKeys,
+  onNavigateToPaymentSettings,
 }) => {
   const [selectedProductForKeys, setSelectedProductForKeys] = useState<DigitalProduct | null>(null);
   const [keysInput, setKeysInput] = useState('');
@@ -45,9 +49,10 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
       title: '',
       description: '',
       type: 'license_key',
-      priceUsd: 19.99,
-      priceStars: 1000,
-      priceTon: 3.5,
+      priceInr: 320.00,
+      priceUsd: 3.99,
+      priceStars: 200,
+      priceTon: 0.8,
       stockType: 'key_pool',
       availableKeys: [],
       soldKeysCount: 0,
@@ -88,21 +93,38 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
       {/* Top Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Package className="h-5 w-5 text-cyan-400" />
-            <span>Digital Products & Key Inventory</span>
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Package className="h-5 w-5 text-cyan-400" />
+              <span>Digital Products & UPI QR Price Inventory</span>
+            </h2>
+            <span className="rounded bg-cyan-500/10 px-2 py-0.5 text-xs font-semibold text-cyan-400 border border-cyan-500/20">
+              Bot Editor → Products
+            </span>
+          </div>
           <p className="text-xs text-slate-400">
-            Manage serial license key pools, subscription channels, and automated dispatch items
+            Products generate authoritatively calculated Dynamic UPI QRs upon customer checkout (e.g. ₹320, ₹850, ₹1,500)
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-cyan-500 shadow-md shadow-cyan-600/20 active:scale-95"
-        >
-          <Plus className="h-4 w-4" /> Add Digital Product
-        </button>
+        <div className="flex items-center gap-2">
+          {onNavigateToPaymentSettings && (
+            <button
+              onClick={onNavigateToPaymentSettings}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white"
+            >
+              <QrCode className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Payment Settings</span>
+            </button>
+          )}
+
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-cyan-500 shadow-md shadow-cyan-600/20 active:scale-95"
+          >
+            <Plus className="h-4 w-4" /> Add Digital Product
+          </button>
+        </div>
       </div>
 
       {/* Product Cards Grid */}
@@ -174,14 +196,17 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                   </div>
                 </div>
 
-                {/* Pricing Tiers */}
+                {/* Pricing Tiers with prominent UPI INR */}
                 <div className="mt-3 flex items-center justify-between border-t border-slate-800 pt-3 text-xs font-semibold">
-                  <div className="text-slate-200">${p.priceUsd} USD</div>
-                  <div className="flex items-center gap-1 text-amber-400">
+                  <div className="flex items-center text-white font-extrabold text-sm">
+                    <IndianRupee className="h-3.5 w-3.5 text-cyan-400 mr-0.5" />
+                    <span>{(p.priceInr ?? 320).toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-amber-400 text-xs">
                     <Flame className="h-3 w-3" />
                     <span>{p.priceStars} Stars</span>
                   </div>
-                  <div className="text-sky-400 font-mono text-[11px]">{p.priceTon} TON</div>
+                  <div className="text-slate-400 text-[11px]">${p.priceUsd} USD</div>
                 </div>
               </div>
 
@@ -356,7 +381,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                   <input
                     type="text"
                     value={editingProduct.badge || ''}
-                    placeholder="e.g. Best Seller, 50% Off"
+                    placeholder="e.g. Popular, Best Seller"
                     onChange={(e) =>
                       setEditingProduct({ ...editingProduct, badge: e.target.value })
                     }
@@ -367,24 +392,25 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Price (USD)
+                  <label className="block text-xs font-semibold text-emerald-400 mb-1">
+                    UPI Price (INR ₹)
                   </label>
                   <input
                     type="number"
                     step="0.01"
-                    value={editingProduct.priceUsd || 0}
+                    required
+                    value={editingProduct.priceInr || 0}
                     onChange={(e) =>
                       setEditingProduct({
                         ...editingProduct,
-                        priceUsd: parseFloat(e.target.value),
+                        priceInr: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-cyan-500 focus:outline-none"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-cyan-500 focus:outline-none font-bold"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-amber-400 mb-1">
                     Stars Price ⭐
                   </label>
                   <input
@@ -393,7 +419,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                     onChange={(e) =>
                       setEditingProduct({
                         ...editingProduct,
-                        priceStars: parseInt(e.target.value),
+                        priceStars: parseInt(e.target.value) || 0,
                       })
                     }
                     className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-cyan-500 focus:outline-none"
@@ -401,16 +427,16 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    TON Price 💎
+                    USD Price ($)
                   </label>
                   <input
                     type="number"
-                    step="0.1"
-                    value={editingProduct.priceTon || 0}
+                    step="0.01"
+                    value={editingProduct.priceUsd || 0}
                     onChange={(e) =>
                       setEditingProduct({
                         ...editingProduct,
-                        priceTon: parseFloat(e.target.value),
+                        priceUsd: parseFloat(e.target.value) || 0,
                       })
                     }
                     className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-cyan-500 focus:outline-none"

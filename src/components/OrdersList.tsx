@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Order, OrderStatus } from '../types';
+import { Order, PaymentStatus } from '../types';
 import {
   ShoppingCart,
   Search,
@@ -7,9 +7,9 @@ import {
   Clock,
   XCircle,
   Copy,
-  ExternalLink,
   Flame,
   Key,
+  IndianRupee,
   RotateCcw
 } from 'lucide-react';
 
@@ -20,7 +20,7 @@ interface OrdersListProps {
 
 export const OrdersList: React.FC<OrdersListProps> = ({ orders, botId }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | PaymentStatus>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const filteredOrders = orders
@@ -76,9 +76,9 @@ export const OrdersList: React.FC<OrdersListProps> = ({ orders, botId }) => {
             className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-cyan-500 focus:outline-none"
           >
             <option value="all">All Statuses</option>
-            <option value="completed">Completed</option>
-            <option value="pending">Pending</option>
-            <option value="failed">Failed</option>
+            <option value="PAYMENT_SUCCESSFUL">Delivered / Paid</option>
+            <option value="PAYMENT_PENDING">Pending</option>
+            <option value="PAYMENT_FAILED">Failed</option>
           </select>
         </div>
       </div>
@@ -125,22 +125,27 @@ export const OrdersList: React.FC<OrdersListProps> = ({ orders, botId }) => {
 
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-1.5 font-bold text-slate-100">
+                        {o.paymentMethod === 'upi_dynamic_qr' && (
+                          <span className="flex items-center gap-0.5 text-cyan-400 font-mono">
+                            <IndianRupee className="h-3 w-3" />
+                            {o.amount.toFixed(2)}
+                          </span>
+                        )}
                         {o.paymentMethod === 'stars' && (
                           <span className="flex items-center gap-1 text-amber-400">
-                            <Flame className="h-3.5 w-3.5" /> Stars
+                            <Flame className="h-3.5 w-3.5" /> {o.amount} Stars
                           </span>
                         )}
                         {o.paymentMethod === 'ton' && (
-                          <span className="text-sky-400 font-mono">TON</span>
+                          <span className="text-sky-400 font-mono">{o.amount} TON</span>
                         )}
                         {o.paymentMethod === 'usdt' && (
-                          <span className="text-emerald-400 font-mono">USDT</span>
+                          <span className="text-emerald-400 font-mono">${o.amount} USDT</span>
                         )}
-                        <span>${o.amount}</span>
                       </div>
-                      {o.txHash && (
+                      {o.providerTxId && (
                         <div className="text-[10px] font-mono text-slate-400 truncate max-w-[120px]">
-                          {o.txHash}
+                          {o.providerTxId}
                         </div>
                       )}
                     </td>
@@ -148,15 +153,17 @@ export const OrdersList: React.FC<OrdersListProps> = ({ orders, botId }) => {
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2">
                         <span className="max-w-[200px] truncate rounded bg-slate-950 px-2 py-1 font-mono text-[11px] text-emerald-400 border border-slate-800">
-                          {o.deliveredPayload}
+                          {o.deliveredPayload || 'Awaiting Payment'}
                         </span>
-                        <button
-                          onClick={() => copyToClipboard(o.deliveredPayload, o.id)}
-                          className="text-slate-400 hover:text-white"
-                          title="Copy delivered key"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
+                        {o.deliveredPayload && (
+                          <button
+                            onClick={() => copyToClipboard(o.deliveredPayload, o.id)}
+                            className="text-slate-400 hover:text-white"
+                            title="Copy delivered key"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                       {copiedId === o.id && (
                         <span className="text-[10px] text-emerald-400">Copied!</span>
@@ -164,19 +171,24 @@ export const OrdersList: React.FC<OrdersListProps> = ({ orders, botId }) => {
                     </td>
 
                     <td className="py-3.5 px-4 text-right">
-                      {o.status === 'completed' && (
+                      {o.status === 'PAYMENT_SUCCESSFUL' && (
                         <span className="inline-flex items-center gap-1 text-emerald-400 text-xs font-semibold">
                           <CheckCircle2 className="h-3.5 w-3.5" /> Delivered
                         </span>
                       )}
-                      {o.status === 'pending' && (
+                      {o.status === 'PAYMENT_PENDING' && (
                         <span className="inline-flex items-center gap-1 text-amber-400 text-xs font-semibold">
                           <Clock className="h-3.5 w-3.5" /> Pending
                         </span>
                       )}
-                      {o.status === 'failed' && (
+                      {o.status === 'PAYMENT_FAILED' && (
                         <span className="inline-flex items-center gap-1 text-rose-400 text-xs font-semibold">
                           <XCircle className="h-3.5 w-3.5" /> Failed
+                        </span>
+                      )}
+                      {o.status === 'PENDING_VERIFICATION' && (
+                        <span className="inline-flex items-center gap-1 text-purple-400 text-xs font-semibold">
+                          <Clock className="h-3.5 w-3.5" /> Manual Audit
                         </span>
                       )}
                     </td>
