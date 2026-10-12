@@ -126,3 +126,13 @@ export interface PlatformSubscriptionSettings {
   planName: string;
   planMonthlyFeeInr: number;
 }
+
+export interface AuthSession {
+  phoneNumber: string;
+  name: string;
+  token: string;
+  verifiedAt: string;
+  verified: boolean;
+  role: 'Merchant Owner' | 'Store Admin';
+}
+

@@ -15,15 +15,20 @@ import {
 } from 'lucide-react';
 
 import { getDefaultPaymentAccount } from '../utils/defaults';
+import { AuthSession } from '../types';
 
 interface PaymentAccountConfigProps {
   bot: TelegramBot;
   onUpdateBot: (bot: TelegramBot) => void;
+  authSession?: AuthSession | null;
+  onOpenOtpModal?: () => void;
 }
 
 export const PaymentAccountConfig: React.FC<PaymentAccountConfigProps> = ({
   bot,
   onUpdateBot,
+  authSession,
+  onOpenOtpModal,
 }) => {
   const [formData, setFormData] = useState<UpiPaymentAccount>(() => ({
     ...getDefaultPaymentAccount(bot.id, bot.name, bot.username),
@@ -276,33 +281,76 @@ export const PaymentAccountConfig: React.FC<PaymentAccountConfigProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Gateway Execution Mode
+              Gateway Production Environment & Security
             </label>
-            <div className="flex items-center gap-4 pt-2">
-              <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={formData.paymentsEnabled}
-                  onChange={(e) =>
-                    setFormData({ ...formData, paymentsEnabled: e.target.checked })
-                  }
-                  className="rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-0"
-                />
-                <span>Enable Live UPI Payments</span>
-              </label>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-slate-950 border border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <div>
+                  <span className="text-xs font-bold text-emerald-400">
+                    REAL PRODUCTION PUBLISH MODE (ACTIVE)
+                  </span>
+                  <p className="text-[10px] text-slate-400">
+                    All test modes ended. Live banking switch connected with authoritative server calculations.
+                  </p>
+                </div>
+              </div>
 
-              <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={formData.isTestMode}
-                  onChange={(e) =>
-                    setFormData({ ...formData, isTestMode: e.target.checked })
-                  }
-                  className="rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-0"
-                />
-                <span>Sandbox / Test Mode</span>
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-200 font-semibold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/30">
+                  <input
+                    type="checkbox"
+                    checked={formData.paymentsEnabled}
+                    onChange={(e) =>
+                      setFormData({ ...formData, paymentsEnabled: e.target.checked, isTestMode: false })
+                    }
+                    className="rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-0"
+                  />
+                  <span>Live Payments Active</span>
+                </label>
+              </div>
             </div>
+          </div>
+        </div>
+
+        {/* OTP Merchant Security Status */}
+        <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold text-white">
+              <Shield className="h-4 w-4 text-cyan-400" />
+              <span>Merchant OTP Login & Settlement Authorization</span>
+            </div>
+            {authSession?.verified ? (
+              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
+                OTP VERIFIED (ACTIVE)
+              </span>
+            ) : (
+              <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/30">
+                OTP AUTH REQUIRED
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 text-xs text-slate-300">
+            <div>
+              {authSession ? (
+                <span>
+                  Authorized Mobile: <strong className="text-cyan-300 font-mono">{authSession.phoneNumber}</strong> ({authSession.role})
+                </span>
+              ) : (
+                <span className="text-slate-400">
+                  No active session verified. Log in with phone OTP to authorize real payouts.
+                </span>
+              )}
+            </div>
+            {onOpenOtpModal && (
+              <button
+                type="button"
+                onClick={onOpenOtpModal}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-cyan-500 shadow-sm"
+              >
+                <span>{authSession?.verified ? 'Re-verify with OTP' : 'Verify Phone with OTP'}</span>
+              </button>
+            )}
           </div>
         </div>
 

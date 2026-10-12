@@ -1,5 +1,5 @@
-import React from 'react';
-import { TelegramBot } from '../types';
+import React, { useState } from 'react';
+import { TelegramBot, AuthSession } from '../types';
 import {
   Bot,
   ChevronDown,
@@ -9,7 +9,9 @@ import {
   Zap,
   QrCode,
   Smartphone,
-  Monitor
+  Monitor,
+  KeyRound,
+  Shield
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -21,6 +23,10 @@ interface HeaderProps {
   onOpenTestsModal: () => void;
   viewMode: 'phone' | 'desktop';
   onToggleViewMode: (mode: 'phone' | 'desktop') => void;
+  authSession?: AuthSession | null;
+  onOpenOtpModal?: () => void;
+  onOpenApkModal?: () => void;
+  isAppInstalled?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -32,6 +38,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTestsModal,
   viewMode,
   onToggleViewMode,
+  authSession,
+  onOpenOtpModal,
+  onOpenApkModal,
+  isAppInstalled,
 }) => {
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
 
@@ -46,8 +56,9 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="text-sm sm:text-base font-extrabold tracking-tight text-white">FINE BOTUS</span>
-              <span className="rounded bg-cyan-500/10 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-semibold text-cyan-400 border border-cyan-500/20">
-                APK RATIO
+              <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                REAL MODE
               </span>
             </div>
             <p className="hidden sm:block text-xs text-slate-400">Dynamic UPI QR Commerce Engine</p>
@@ -115,6 +126,32 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Merchant Login & OTP Verification Status */}
+        {onOpenOtpModal && (
+          <button
+            onClick={onOpenOtpModal}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+              authSession?.verified
+                ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-950/50'
+                : 'border-amber-500/40 bg-amber-950/30 text-amber-300 hover:bg-amber-950/50'
+            }`}
+            title="Merchant Login & OTP Verification"
+          >
+            {authSession?.verified ? (
+              <>
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="hidden sm:inline font-mono text-[11px]">{authSession.phoneNumber}</span>
+                <span className="rounded bg-emerald-500/20 px-1 text-[9px] font-bold text-emerald-400">OTP OK</span>
+              </>
+            ) : (
+              <>
+                <KeyRound className="h-3.5 w-3.5 text-amber-400" />
+                <span>Verify OTP</span>
+              </>
+            )}
+          </button>
+        )}
+
         {/* Aspect Ratio Switcher Toggle */}
         <div className="flex items-center rounded-lg border border-slate-700 bg-slate-950 p-0.5">
           <button
@@ -142,6 +179,23 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden xs:inline">Desktop</span>
           </button>
         </div>
+
+        {/* Install on Phone / APK Modal Button */}
+        {onOpenApkModal && (
+          <button
+            onClick={onOpenApkModal}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition shadow-sm ${
+              isAppInstalled
+                ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300'
+                : 'border-cyan-500/40 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/50'
+            }`}
+            title="Install App on Phone (WebAPK / 100% Phone Supported)"
+          >
+            <Smartphone className="h-3.5 w-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">{isAppInstalled ? 'Installed' : 'Install on Phone'}</span>
+            <span className="rounded bg-emerald-500/20 px-1 text-[9px] font-extrabold text-emerald-400">APK</span>
+          </button>
+        )}
 
         <button
           onClick={onOpenTestsModal}

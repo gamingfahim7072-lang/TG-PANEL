@@ -1,0 +1,57 @@
+{
+  "id": "com.finebotus.teledash",
+  "name": "TeleDash Pro - FINE BOTUS",
+  "short_name": "TeleDash",
+  "description": "Dynamic UPI QR Telegram Bot Commerce & Merchant Management APK",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay"],
+  "background_color": "#020617",
+  "theme_color": "#0891b2",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["business", "finance", "productivity"],
+  "shortcuts": [
+    {
+      "name": "UPI Payment Simulator",
+      "short_name": "Simulator",
+      "description": "Test live Dynamic UPI QR and instant license delivery",
+      "url": "/?tab=simulator",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Live Orders",
+      "short_name": "Orders",
+      "description": "View recent orders and payments",
+      "url": "/?tab=orders",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
